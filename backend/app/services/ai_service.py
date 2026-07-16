@@ -52,6 +52,7 @@ The supported tools, operations, and parameter structures are:
 3. Refunds Tool ("crm.refund"):
    - "read": Read a refund ticket. Parameters: {"refund_id": "REFXXXXXX"}
    - "list": List refunds. Parameters: {"status": "...", "skip": 0, "limit": 10}
+   - "create": Create a refund request. Parameters: {"order_id": "ORDXXXXXX", "refund_reason": "...", "refund_amount": 99.99}
    - "approve": Approve a pending refund. Parameters: {"refund_id": "REFXXXXXX"}
    - "reject": Reject a pending refund. Parameters: {"refund_id": "REFXXXXXX"}
    - "update": Update a refund ticket. Parameters: {"refund_id": "REFXXXXXX", "refund_status": "..."}
@@ -426,11 +427,11 @@ class AIService:
 
         try:
             if tool == "crm.customer":
-                result = self._execute_customer(db, operation, params)
+                result = self._execute_customer(db, operation, params, operator_id)
             elif tool == "crm.order":
                 result = self._execute_order(db, operation, params, operator_id)
             elif tool == "crm.refund":
-                result = self._execute_refund(db, operation, params)
+                result = self._execute_refund(db, operation, params, operator_id)
             elif tool == "crm.employee":
                 result = self._execute_employee(db, operation, params)
             elif tool == "crm.dashboard":
@@ -472,7 +473,7 @@ class AIService:
                 }
             }
 
-    def _execute_customer(self, db: Session, operation: str, params: Dict[str, Any]) -> Any:
+    def _execute_customer(self, db: Session, operation: str, params: Dict[str, Any], operator_id: Optional[str] = None) -> Any:
         if operation == "read":
             customer_id = params.get("customer_id")
             if not customer_id:
@@ -505,22 +506,27 @@ class AIService:
                 password=params.get("password", "tempPass123"),
                 aadhaar_number=params.get("aadhaar_number"),
                 pan_number=params.get("pan_number"),
-                card_number=params.get("card_number")
+                card_number=params.get("card_number"),
+                region=params.get("region")
             )
-            res = self.customer_service.create_customer(db, cust_in)
+            res = self.customer_service.create_customer(db, cust_in, operator_id)
+            if isinstance(res, dict):
+                return {"customer_id": res["customer_id"], "full_name": res["full_name"], "status": res["status"]}
             return {"customer_id": res.customer_id, "full_name": res.full_name, "status": res.status}
         elif operation == "update":
             customer_id = params.get("customer_id")
             if not customer_id:
                 raise ValueError("customer_id is required.")
             cust_in = CustomerUpdate(**{k: v for k, v in params.items() if k != "customer_id"})
-            res = self.customer_service.update_customer(db, customer_id, cust_in)
+            res = self.customer_service.update_customer(db, customer_id, cust_in, operator_id)
             return {"customer_id": res.customer_id, "full_name": res.full_name, "status": res.status}
         elif operation == "delete":
             customer_id = params.get("customer_id")
             if not customer_id:
                 raise ValueError("customer_id is required.")
-            self.customer_service.delete_customer(db, customer_id)
+            ret = self.customer_service.delete_customer(db, customer_id, operator_id)
+            if isinstance(ret, dict):
+                return ret
             return {"deleted": True, "customer_id": customer_id}
         elif operation == "search":
             query = params.get("query") or params.get("search", "")
@@ -624,7 +630,7 @@ class AIService:
         else:
             raise ValueError(f"Unsupported operation '{operation}' on tool crm.order")
 
-    def _execute_refund(self, db: Session, operation: str, params: Dict[str, Any]) -> Any:
+    def _execute_refund(self, db: Session, operation: str, params: Dict[str, Any], operator_id: Optional[str] = None) -> Any:
         if operation == "read":
             refund_id = params.get("refund_id")
             if not refund_id:
@@ -648,20 +654,38 @@ class AIService:
                 "items": [{"refund_id": r.refund_id, "order_id": r.order_id, "refund_status": r.refund_status, "refund_amount": float(r.refund_amount)} for r in items],
                 "total": total
             }
+        elif operation == "create":
+            r_id = params.get("refund_id") or f"REF{re.sub('[^0-9]', '', str(time.time()))[:6]}"
+            ref_in = RefundCreate(
+                refund_id=r_id,
+                customer_id=params.get("customer_id", ""),
+                order_id=params.get("order_id", ""),
+                refund_reason=params.get("refund_reason", ""),
+                refund_amount=params.get("refund_amount", 0.0),
+                refund_status=params.get("refund_status", "Requested")
+            )
+            res = self.order_service.create_refund(db, ref_in, operator_id)
+            return {
+                "refund_id": res.refund_id,
+                "order_id": res.order_id,
+                "customer_id": res.customer_id,
+                "refund_status": res.refund_status,
+                "refund_amount": float(res.refund_amount)
+            }
         elif operation in ("approve", "reject"):
             refund_id = params.get("refund_id")
             if not refund_id:
                 raise ValueError("refund_id is required.")
             status_val = "Approved" if operation == "approve" else "Rejected"
             ref_in = RefundUpdate(refund_status=status_val)
-            res = self.order_service.update_refund(db, refund_id, ref_in)
+            res = self.order_service.update_refund(db, refund_id, ref_in, operator_id)
             return {"refund_id": res.refund_id, "refund_status": res.refund_status, "refund_amount": float(res.refund_amount)}
         elif operation == "update":
             refund_id = params.get("refund_id")
             if not refund_id:
                 raise ValueError("refund_id is required.")
             ref_in = RefundUpdate(**{k: v for k, v in params.items() if k != "refund_id"})
-            res = self.order_service.update_refund(db, refund_id, ref_in)
+            res = self.order_service.update_refund(db, refund_id, ref_in, operator_id)
             return {"refund_id": res.refund_id, "refund_status": res.refund_status}
         else:
             raise ValueError(f"Unsupported operation '{operation}' on tool crm.refund")

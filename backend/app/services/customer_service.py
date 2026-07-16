@@ -31,12 +31,81 @@ class CustomerService:
         return self.repo.get_all(db, search, status, sort_by, sort_desc, skip, limit, region)
 
     def create_customer(self, db: Session, customer_in: CustomerCreate, operator_id: Optional[str] = None) -> Customer:
-        # Check if email exists
+        # Check operator role
+        from ..models.employee import Employee
+        operator = None
+        if operator_id:
+            operator = db.query(Employee).filter(Employee.employee_id == operator_id).first()
+
+        if operator and operator.role == "manager":
+            # Enforce region boundary
+            if not customer_in.region or customer_in.region.lower() != operator.region.lower():
+                raise HTTPException(status_code=400, detail=f"The region should be {operator.region}.")
+            
+            # Check unique email/phone in active customers
+            if self.repo.get_by_email(db, customer_in.email):
+                raise HTTPException(status_code=400, detail="Customer email already registered")
+            existing_phone = db.query(Customer).filter(Customer.phone == customer_in.phone).first()
+            if existing_phone:
+                raise HTTPException(status_code=400, detail="Customer phone already registered")
+
+            # Check if already pending to avoid duplicates
+            existing_pending = db.query(PendingCustomer).filter(
+                (PendingCustomer.email == customer_in.email) | (PendingCustomer.phone == customer_in.phone)
+            ).first()
+            if existing_pending and existing_pending.request_status == "Pending":
+                raise HTTPException(status_code=400, detail="Customer registration request is already pending approval")
+
+            # Create pending customer entry
+            db_pending = PendingCustomer(
+                full_name=customer_in.full_name,
+                email=customer_in.email,
+                phone=customer_in.phone,
+                address=customer_in.address,
+                profile_image=customer_in.profile_image,
+                request_status="Pending",
+                aadhaar_number=customer_in.aadhaar_number,
+                pan_number=customer_in.pan_number,
+                card_number=customer_in.card_number,
+                region=customer_in.region
+            )
+            created_pending = self.repo.create_pending(db, db_pending)
+
+            # Log system audit log
+            db.add(AuditLog(
+                user_id=operator_id,
+                tool_name="create_customer_request",
+                operation="CREATE",
+                resource="pending_customers",
+                decision="Allowed",
+                reason=f"Manager {operator_id} submitted pending customer registration for {customer_in.full_name}.",
+                risk_score=0,
+                status="success"
+            ))
+            db.commit()
+
+            import datetime
+            # Return compatible dict representing the pending customer
+            return {
+                "customer_id": "PENDING",
+                "full_name": customer_in.full_name,
+                "email": customer_in.email,
+                "phone": customer_in.phone,
+                "address": customer_in.address,
+                "profile_image": customer_in.profile_image,
+                "status": "Pending",
+                "aadhaar_number": customer_in.aadhaar_number,
+                "pan_number": customer_in.pan_number,
+                "card_number": customer_in.card_number,
+                "region": customer_in.region,
+                "created_at": datetime.datetime.utcnow(),
+                "updated_at": datetime.datetime.utcnow()
+            }
+
+        # For Admin (or other non-managers), proceed with active customer insertion
         if self.repo.get_by_email(db, customer_in.email):
             raise HTTPException(status_code=400, detail="Customer email already registered")
         
-        # Check phone unique
-        # We can query
         existing_phone = db.query(Customer).filter(Customer.phone == customer_in.phone).first()
         if existing_phone:
             raise HTTPException(status_code=400, detail="Customer phone already registered")
@@ -122,6 +191,30 @@ class CustomerService:
 
     def delete_customer(self, db: Session, customer_id: str, operator_id: Optional[str] = None) -> None:
         db_customer = self.get_customer(db, customer_id)
+        
+        # Check operator role
+        from ..models.employee import Employee
+        operator = None
+        if operator_id:
+            operator = db.query(Employee).filter(Employee.employee_id == operator_id).first()
+
+        if operator and operator.role == "manager":
+            db_customer.status = "PENDING_DELETE"
+            # Log system audit log
+            db.add(AuditLog(
+                user_id=operator_id,
+                tool_name="delete_customer_request",
+                operation="DELETE_REQUEST",
+                resource="customers",
+                decision="Allowed",
+                reason=f"Manager {operator_id} requested deletion of customer {customer_id}.",
+                risk_score=0,
+                status="success"
+            ))
+            db.commit()
+            return
+
+        # Admin delete logic (hard delete)
         self.repo.delete(db, db_customer)
         
         # Log system audit log

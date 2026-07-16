@@ -37,10 +37,25 @@ class OrderService:
         if self.repo.get_by_id(db, order_in.order_id):
             raise HTTPException(status_code=400, detail="Order ID already exists")
 
-        # Force PENDING_CREATE if operator is a customer
+        # Auto-lookup predefined product details
+        products_db = {
+            "Premium Support Contract (Annual)": {"price": 2500.0, "category": "Support Contracts"},
+            "Gold Support Plan": {"price": 1500.0, "category": "Support Contracts"},
+            "Silver Support Plan": {"price": 800.0, "category": "Support Contracts"},
+            "Enterprise Gateway License": {"price": 5000.0, "category": "Licenses"},
+            "Threat Intelligence Feed": {"price": 1200.0, "category": "Feeds"}
+        }
+        
+        if order_in.product_name in products_db:
+            prod_info = products_db[order_in.product_name]
+            order_in.category = prod_info["category"]
+            order_in.price = Decimal(str(prod_info["price"] * order_in.quantity))
+
+        # Force Placed if operator is a customer
         status_val = order_in.order_status
         if operator_id and operator_id.startswith("CUS"):
-            status_val = "PENDING_CREATE"
+            status_val = "Placed"
+            order_in.customer_id = operator_id
 
         db_order = Order(
             order_id=order_in.order_id,
@@ -162,8 +177,8 @@ class OrderService:
         initial_status = order.order_status
 
         if action.upper() == "APPROVE":
-            if initial_status == "PENDING_CREATE":
-                order.order_status = "Processing"
+            if initial_status in ("PENDING_CREATE", "Placed"):
+                order.order_status = "Delivered"
                 db.commit()
                 db.add(AuditLog(
                     user_id=operator_id,
@@ -190,7 +205,7 @@ class OrderService:
             db.commit()
             return order
         elif action.upper() == "REJECT":
-            if initial_status == "PENDING_CREATE":
+            if initial_status in ("PENDING_CREATE", "Placed"):
                 self.repo.delete(db, order)
                 db.add(AuditLog(
                     user_id=operator_id,
@@ -203,7 +218,7 @@ class OrderService:
                     status="success"
                 ))
             elif initial_status == "PENDING_DELETE":
-                order.order_status = "Processing"
+                order.order_status = "Delivered"
                 db.commit()
                 db.add(AuditLog(
                     user_id=operator_id,
@@ -242,6 +257,18 @@ class OrderService:
         return self.repo.get_refund_all(db, search, status, sort_by, sort_desc, skip, limit, customer_id=customer_id, region=region)
 
     def create_refund(self, db: Session, refund_in: RefundCreate, operator_id: Optional[str] = None) -> Refund:
+        # Validate order exists
+        order = self.repo.get_by_id(db, refund_in.order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        # If operator is customer, force fields
+        if operator_id and operator_id.startswith("CUS"):
+            refund_in.customer_id = operator_id
+            refund_in.refund_status = "Requested"
+            if not refund_in.refund_amount or refund_in.refund_amount == 0:
+                refund_in.refund_amount = order.price
+
         if self.repo.get_refund_by_id(db, refund_in.refund_id):
             raise HTTPException(status_code=400, detail="Refund ID already exists")
 

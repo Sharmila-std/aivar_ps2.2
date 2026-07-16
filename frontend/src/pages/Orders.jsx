@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, ChevronLeft, ChevronRight, X, ShoppingBag } from 'lucide-react';
+import { Search, Eye, ChevronLeft, ChevronRight, X, ShoppingBag, Plus, RefreshCw, AlertCircle, Check } from 'lucide-react';
 import api from '../api';
+
+const PREDEFINED_PRODUCTS = [
+  { name: "Premium Support Contract (Annual)", price: 2500.00, category: "Support Contracts" },
+  { name: "Gold Support Plan", price: 1500.00, category: "Support Contracts" },
+  { name: "Silver Support Plan", price: 800.00, category: "Support Contracts" },
+  { name: "Enterprise Gateway License", price: 5000.00, category: "Licenses" },
+  { name: "Threat Intelligence Feed", price: 1200.00, category: "Feeds" }
+];
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -15,6 +23,31 @@ const Orders = () => {
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+
+  // Retrieve user role from localStorage
+  const userStr = localStorage.getItem('user');
+  const loggedInUser = userStr ? JSON.parse(userStr) : null;
+  const isCustomer = loggedInUser?.role_name === 'Customer';
+  const customerId = loggedInUser?.customer_id;
+
+  // Modals
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Create Order Form State
+  const [selectedProduct, setSelectedProduct] = useState(PREDEFINED_PRODUCTS[0]);
+  const [quantity, setQuantity] = useState(1);
+  const [deliveryAddress, setDeliveryAddress] = useState(isCustomer ? `Shipping Address for ${customerId}` : '');
+  const [paymentMethod, setPaymentMethod] = useState('Credit Card');
+  const [paymentStatus, setPaymentStatus] = useState('Paid');
+
+  // Refund Form State
+  const [refundOrderId, setRefundOrderId] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundAmount, setRefundAmount] = useState('');
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -42,6 +75,82 @@ const Orders = () => {
   useEffect(() => {
     fetchOrders();
   }, [search, statusFilter, sortBy, sortDesc, page]);
+
+  const handleCreateOrder = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const orderId = "ORD" + Math.floor(100000 + Math.random() * 900000);
+      const computedPrice = selectedProduct.price * quantity;
+      
+      const payload = {
+        order_id: orderId,
+        customer_id: customerId || '',
+        product_name: selectedProduct.name,
+        category: selectedProduct.category,
+        quantity: parseInt(quantity),
+        price: parseFloat(computedPrice),
+        delivery_address: deliveryAddress,
+        payment_method: paymentMethod,
+        payment_status: paymentStatus,
+        order_status: 'Placed',
+        items: [
+          {
+            product_name: selectedProduct.name,
+            quantity: parseInt(quantity),
+            unit_price: selectedProduct.price,
+            subtotal: parseFloat(computedPrice)
+          }
+        ]
+      };
+
+      await api.post('/api/orders', payload);
+      setSuccessMsg('Order placed successfully! Forwarded to Regional Manager for approval.');
+      setTimeout(() => {
+        setIsCreateModalOpen(false);
+        setSuccessMsg('');
+        fetchOrders();
+      }, 2000);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to place order.');
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleCreateRefund = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const refundId = "REF" + Math.floor(100000 + Math.random() * 900000);
+      const payload = {
+        refund_id: refundId,
+        customer_id: customerId || '',
+        order_id: refundOrderId.toUpperCase(),
+        refund_reason: refundReason,
+        refund_amount: parseFloat(refundAmount),
+        refund_status: 'Requested'
+      };
+
+      await api.post('/api/refunds', payload);
+      setSuccessMsg('Refund request submitted successfully! Pending Regional Manager review.');
+      setTimeout(() => {
+        setIsRefundModalOpen(false);
+        setSuccessMsg('');
+        fetchOrders();
+      }, 2000);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to submit refund claim.');
+    } finally {
+      setFormLoading(false);
+    }
+  };
 
   const handleSearch = (e) => {
     setSearch(e.target.value);
@@ -78,9 +187,29 @@ const Orders = () => {
 
   return (
     <div className="flex-1 p-8 space-y-6 overflow-y-auto max-h-[calc(100vh-4rem)]">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-100">Order Logs</h1>
-        <p className="text-slate-400 text-xs mt-1">Audit customer purchase transactions and delivery status.</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Order Logs</h1>
+          <p className="text-slate-400 text-xs mt-1">Audit customer purchase transactions and delivery status.</p>
+        </div>
+        {isCustomer && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+            >
+              <Plus size={14} />
+              Place Order
+            </button>
+            <button
+              onClick={() => setIsRefundModalOpen(true)}
+              className="bg-rose-600/10 border border-rose-500/20 hover:bg-rose-600/20 text-rose-400 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+            >
+              <RefreshCw size={14} />
+              Request Refund
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Filters and Search */}
@@ -272,6 +401,212 @@ const Orders = () => {
               <p className="text-slate-400 text-xs">Total Order Value:</p>
               <p className="text-xl font-bold text-slate-100">${Number(selectedOrder.price).toFixed(2)}</p>
             </div>
+          </div>
+        </div>
+      {/* PLACE ORDER MODAL */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 relative shadow-2xl">
+            <button
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setErrorMsg('');
+                setSuccessMsg('');
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                <ShoppingBag size={18} />
+              </div>
+              <h3 className="font-bold text-slate-100 text-lg">Place New Order</h3>
+            </div>
+
+            {successMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center gap-2">
+                <Check size={14} />
+                {successMsg}
+              </div>
+            )}
+            {errorMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                <AlertCircle size={14} />
+                {errorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateOrder} className="space-y-4">
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Select Product</label>
+                <select
+                  value={selectedProduct.name}
+                  onChange={(e) => {
+                    const prod = PREDEFINED_PRODUCTS.find(p => p.name === e.target.value);
+                    if (prod) setSelectedProduct(prod);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                >
+                  {PREDEFINED_PRODUCTS.map(p => (
+                    <option key={p.name} value={p.name}>{p.name} (${p.price.toFixed(2)})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">Quantity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">Total Price</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={`$${(selectedProduct.price * quantity).toFixed(2)}`}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-500 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Delivery Address</label>
+                <textarea
+                  required
+                  rows="2"
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">Payment Method</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="Credit Card">Credit Card</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="PayPal">PayPal</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">Payment Status</label>
+                  <select
+                    value={paymentStatus}
+                    onChange={(e) => setPaymentStatus(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="Paid">Paid</option>
+                    <option value="Unpaid">Unpaid</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={formLoading}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-semibold mt-4 transition-all"
+              >
+                {formLoading ? 'Processing...' : 'Submit Order'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REQUEST REFUND MODAL */}
+      {isRefundModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 relative shadow-2xl">
+            <button
+              onClick={() => {
+                setIsRefundModalOpen(false);
+                setErrorMsg('');
+                setSuccessMsg('');
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+                <RefreshCw size={18} />
+              </div>
+              <h3 className="font-bold text-slate-100 text-lg">Request Refund</h3>
+            </div>
+
+            {successMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center gap-2">
+                <Check size={14} />
+                {successMsg}
+              </div>
+            )}
+            {errorMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                <AlertCircle size={14} />
+                {errorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateRefund} className="space-y-4">
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Order ID</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. ORD000001"
+                  value={refundOrderId}
+                  onChange={(e) => setRefundOrderId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Refund Reason</label>
+                <textarea
+                  required
+                  rows="3"
+                  placeholder="Provide details on why you are requesting a refund..."
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Refund Amount ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  placeholder="0.00"
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={formLoading}
+                className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-semibold mt-4 transition-all"
+              >
+                {formLoading ? 'Processing...' : 'Submit Refund Claim'}
+              </button>
+            </form>
           </div>
         </div>
       )}

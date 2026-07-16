@@ -31,7 +31,7 @@ const ManagerPendingTasks = () => {
     try {
       if (activeTab === 'creation') {
         const res = await api.get('/api/orders', {
-          params: { status: 'PENDING_CREATE', limit: 100 }
+          params: { status: 'Placed', limit: 100 }
         });
         setOrderCreations(res.data.items || []);
       } else if (activeTab === 'deletion') {
@@ -41,7 +41,7 @@ const ManagerPendingTasks = () => {
         setOrderDeletions(res.data.items || []);
       } else {
         const res = await api.get('/api/refunds', {
-          params: { status: 'Pending', limit: 100 }
+          params: { status: 'Requested', limit: 100 }
         });
         setRefundRequests(res.data.items || []);
       }

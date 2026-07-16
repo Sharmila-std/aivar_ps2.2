@@ -66,22 +66,35 @@ class ABACEngine:
         op_lower = operation.lower()
 
         if role == "Manager":
-            # Manager blocks deletes for ALL tools
-            if op_lower == "delete":
+            # Manager blocks deletes for ALL tools EXCEPT crm.customer and crm.order
+            if op_lower == "delete" and tool not in ("crm.customer", "crm.order"):
                 return ABACDecision(
                     decision="DENY",
-                    reason="Manager role is restricted from performing delete operations.",
+                    reason="Manager role is restricted from performing delete operations on this resource.",
                     failed_stage="Permission Manifest"
                 )
 
             # Customer Tool Rules
             if tool == "crm.customer":
                 if op_lower in ("create",):
-                    return ABACDecision(
-                        decision="DENY",
-                        reason="Manager role is restricted from creating customers.",
-                        failed_stage="Permission Manifest"
-                    )
+                    # Check if region matches manager's region
+                    target_region = None
+                    if params.get("region"):
+                        target_region = params.get("region")
+                    elif prompt:
+                        all_regions = ["coimbatore", "bangalore", "hyderabad", "kochin", "kolkata"]
+                        prompt_lower = prompt.lower()
+                        for reg in all_regions:
+                            if reg in prompt_lower:
+                                target_region = reg.capitalize()
+                                break
+                    
+                    if not target_region or target_region.lower() != user_region.lower():
+                        return ABACDecision(
+                            decision="DENY",
+                            reason=f"The region should be {user_region}.",
+                            failed_stage="Scope Validation"
+                        )
                 if target_customer and target_customer.region != user_region:
                     return ABACDecision(
                         decision="DENY",
@@ -97,6 +110,25 @@ class ABACEngine:
                         reason="Manager role is restricted from creating orders.",
                         failed_stage="Permission Manifest"
                     )
+                if op_lower == "delete":
+                    # Check if order is in PENDING_DELETE status
+                    order_id = params.get("order_id")
+                    if order_id:
+                        order = db.query(Order).filter(Order.order_id == order_id.upper()).first()
+                        if order and order.order_status == "PENDING_DELETE":
+                            pass
+                        else:
+                            return ABACDecision(
+                                decision="DENY",
+                                reason="Manager can only delete orders that are in a PENDING_DELETE status.",
+                                failed_stage="Permission Manifest"
+                            )
+                    else:
+                        return ABACDecision(
+                            decision="DENY",
+                            reason="Manager is restricted from performing bulk delete operations on orders.",
+                            failed_stage="Permission Manifest"
+                        )
                 if target_customer and target_customer.region != user_region:
                     return ABACDecision(
                         decision="DENY",
@@ -150,12 +182,20 @@ class ABACEngine:
 
             # Order Tool Rules
             elif tool == "crm.order":
-                if op_lower in ("create", "update", "delete"):
+                if op_lower in ("update", "delete"):
                     return ABACDecision(
                         decision="DENY",
-                        reason="Customer role is restricted from modifying orders.",
+                        reason="Customer role is restricted from modifying or deleting orders directly.",
                         failed_stage="Permission Manifest"
                     )
+                if op_lower == "create":
+                    param_cust_id = params.get("customer_id")
+                    if param_cust_id and param_cust_id.upper() != session_customer_id.upper():
+                        return ABACDecision(
+                            decision="DENY",
+                            reason=f"Customer can only place orders for themselves. Requested customer ID is '{param_cust_id}'.",
+                            failed_stage="Scope Validation"
+                        )
                 if target_customer and target_customer.customer_id != session_customer_id:
                     return ABACDecision(
                         decision="DENY",
@@ -171,6 +211,23 @@ class ABACEngine:
                         reason="Customer role is restricted from approving or updating refunds.",
                         failed_stage="Permission Manifest"
                     )
+                if op_lower == "create":
+                    param_cust_id = params.get("customer_id")
+                    if param_cust_id and param_cust_id.upper() != session_customer_id.upper():
+                        return ABACDecision(
+                            decision="DENY",
+                            reason=f"Customer can only submit refund requests for themselves. Requested customer ID is '{param_cust_id}'.",
+                            failed_stage="Scope Validation"
+                        )
+                    order_id = params.get("order_id")
+                    if order_id:
+                        order = db.query(Order).filter(Order.order_id == order_id.upper()).first()
+                        if not order or order.customer_id.upper() != session_customer_id.upper():
+                            return ABACDecision(
+                                decision="DENY",
+                                reason="Customer can only submit refund requests for their own orders.",
+                                failed_stage="Scope Validation"
+                            )
                 if target_customer and target_customer.customer_id != session_customer_id:
                     return ABACDecision(
                         decision="DENY",
@@ -494,7 +551,16 @@ class SecurityGateway:
             # Admins always allowed by manifest, fallback support checks
             manifest_allowed = True
             if session_context["role"] != "Admin":
-                if manifest_row:
+                # Special overrides to support delegated workflows
+                is_override = False
+                if session_context["role"] == "Manager" and tool == "crm.customer" and operation in ("create", "delete"):
+                    is_override = True
+                elif session_context["role"] == "Customer" and tool in ("crm.order", "crm.refund") and operation in ("create", "read", "list", "search"):
+                    is_override = True
+
+                if is_override:
+                    manifest_allowed = True
+                elif manifest_row:
                     manifest_allowed = manifest_row.allowed
                     # Normalize operation into database permission manifest category
                     op_category = operation.lower()
