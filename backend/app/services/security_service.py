@@ -1616,6 +1616,9 @@ class SecurityService:
                         # Bypass ownership check on reads if "Read Other Customers" manifest permission is granted
                         if norm_op in ("read", "search", "list") and "Read Other Customers" in cust_perms:
                             pass
+                        # Bypass ownership check on updates if "Update Customer Records" manifest permission is granted
+                        elif norm_op in ("update", "update_request") and "Update Customer Records" in cust_perms:
+                            pass
                         else:
                             return "BLOCK", f"Ownership Violation: Customer cannot access details of '{tgt_cust}'.", "Customer can only access own profile"
                 elif norm_tool == "crm.order":
