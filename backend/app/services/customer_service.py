@@ -127,17 +127,31 @@ class CustomerService:
         
         created = self.repo.create(db, db_customer)
 
-        # Send password to email
+        # Generate a fresh random password for the welcome email
+        import random, string
+        _alphabet = string.ascii_letters + string.digits + "!@#$%"
+        temp_password = ''.join(random.choice(_alphabet) for _ in range(12))
+        # Update the stored hash to use this generated password
+        created.password_hash = hash_password(temp_password)
+        db.commit()
+
+        # Send welcome email with login credentials
         try:
             from ..utils.email import send_email
-            subject = "Welcome to SecureScope AI Portal - Account Details"
+            subject = "Welcome to SecureScope AI Portal - Your Account Credentials"
             body = (
                 f"Hello {created.full_name},\n\n"
-                f"Your Customer account has been successfully created by the administrator.\n\n"
-                f"Login Details:\n"
-                f"Username / Customer ID: {created.customer_id}\n"
-                f"Password: {customer_in.password}\n"
+                f"Your Customer account has been successfully created.\n\n"
+                f"=== LOGIN CREDENTIALS ===\n"
+                f"Username (Customer ID): {created.customer_id}\n"
+                f"Password: {temp_password}\n"
                 f"Assigned Region: {created.region or 'Global'}\n\n"
+                f"Login Steps:\n"
+                f"1. Go to the login page.\n"
+                f"2. Enter your Customer ID as the username.\n"
+                f"3. Enter the password above.\n"
+                f"4. Click 'Sign In'.\n\n"
+                f"IMPORTANT: Please change your password immediately after your first login.\n\n"
                 f"Thank you,\nSecureScope AI Admin Team"
             )
             send_email(created.email, subject, body)
@@ -206,7 +220,7 @@ class CustomerService:
         db.commit()
         return updated
 
-    def delete_customer(self, db: Session, customer_id: str, operator_id: Optional[str] = None) -> None:
+    def delete_customer(self, db: Session, customer_id: str, operator_id: Optional[str] = None):
         db_customer = self.get_customer(db, customer_id)
         
         # Check operator role
@@ -217,6 +231,16 @@ class CustomerService:
 
         if operator and operator.role and operator.role.lower() == "manager":
             db_customer.status = "PENDING_DELETE"
+            # Create a pending update request so it shows up in admin tasks list
+            import json
+            db_req = PendingCustomerUpdate(
+                customer_id=customer_id,
+                updates_json=json.dumps({"status": "PENDING_DELETE"}),
+                request_status="Pending"
+            )
+            db.add(db_req)
+            db.commit()
+            
             # Log system audit log
             db.add(AuditLog(
                 user_id=operator_id,
@@ -229,7 +253,12 @@ class CustomerService:
                 status="success"
             ))
             db.commit()
-            return
+            return {
+                "deleted": False,
+                "status": "pending_approval",
+                "message": f"Customer deletion request for {customer_id} has been forwarded to the administrator for approval.",
+                "customer_id": customer_id
+            }
 
         # Admin delete logic (hard delete)
         self.repo.delete(db, db_customer)
@@ -290,29 +319,7 @@ class CustomerService:
             )
             self.create_customer(db, cust_in, operator_id)
             
-            # Send SMTP Welcome email
-            from ..utils.email import send_email
-            subject = "Welcome to SecureScope CRM - Your Account is Approved!"
-            body = f"""Dear {updated.full_name},
-
-Welcome to the SecureScope CRM Portal! Your registration request has been approved by the administrator.
-
-Here are your account credentials:
-- Customer ID: {new_id}
-- Temporary Password: {temp_password}
-
-Login Instructions:
-1. Go to the login page (http://localhost:5173/).
-2. Enter your Customer ID in the Username/Email field.
-3. Enter your Temporary Password.
-4. Click 'Sign In'.
-
-IMPORTANT: For security purposes, we highly recommend changing your temporary password immediately after your first successful login.
-
-Best regards,
-SecureScope Security Gateway Team
-"""
-            send_email(updated.email, subject, body)
+            # create_customer already sends the welcome email with the generated password.
             
         # Log system audit log for approval / rejection
         action_type = "APPROVAL" if status_in.request_status == "Approved" else "REJECTION"
@@ -391,6 +398,25 @@ SecureScope Security Gateway Team
             
             import json
             updates = json.loads(req.updates_json)
+            
+            if updates.get("status") == "PENDING_DELETE":
+                # Hard delete customer profile on approval
+                self.repo.delete(db, cust)
+                db.commit()
+                
+                db.add(AuditLog(
+                    user_id=operator_id,
+                    tool_name="approve_customer_deletion",
+                    operation="DELETE",
+                    resource="customers",
+                    decision="Allowed",
+                    reason=f"Customer deletion request {request_id} for customer {req.customer_id} approved by admin/manager {operator_id}.",
+                    risk_score=0,
+                    status="success"
+                ))
+                db.commit()
+                return req
+
             for k, v in updates.items():
                 if k == "password":
                     setattr(cust, "password_hash", hash_password(v))
@@ -412,15 +438,28 @@ SecureScope Security Gateway Team
             db.commit()
         elif action.upper() == "REJECT":
             req.request_status = "Rejected"
+            
+            import json
+            try:
+                updates = json.loads(req.updates_json)
+                if updates.get("status") == "PENDING_DELETE":
+                    # Restore customer status back to active (Approved)
+                    cust.status = "Approved"
+            except Exception:
+                pass
             db.commit()
 
+            # Audit log
+            tool_name = "reject_customer_deletion" if updates.get("status") == "PENDING_DELETE" else "reject_profile_update"
+            reason_text = f"Customer deletion request {request_id} rejected" if updates.get("status") == "PENDING_DELETE" else f"Profile update request {request_id} rejected"
+            
             db.add(AuditLog(
                 user_id=operator_id,
-                tool_name="reject_profile_update",
+                tool_name=tool_name,
                 operation="UPDATE",
                 resource="customers",
                 decision="Allowed",
-                reason=f"Profile update request {request_id} for customer {req.customer_id} rejected by manager {operator_id}.",
+                reason=f"{reason_text} for customer {req.customer_id} by manager {operator_id}.",
                 risk_score=0,
                 status="success"
             ))

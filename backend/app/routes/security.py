@@ -75,16 +75,40 @@ def get_audit_logs(
     decision: Optional[str] = Query(None),
     skip: int = Query(0),
     limit: int = Query(50),
+    customer_id: Optional[str] = Query(None),
+    order_id: Optional[str] = Query(None),
+    request_id: Optional[str] = Query(None),
+    session_id: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    user_role: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    attack_category: Optional[str] = Query(None),
+    tool_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_employee: Employee = Depends(get_current_employee)
 ):
-    items, total = service.get_audit_logs(db, user_id, operation, resource, decision, skip, limit)
+    items, total = service.get_audit_logs(
+        db, user_id, operation, resource, decision, skip, limit,
+        customer_id=customer_id, order_id=order_id, request_id=request_id,
+        session_id=session_id, start_date=start_date, end_date=end_date,
+        user_role=user_role, region=region, attack_category=attack_category,
+        tool_name=tool_name
+    )
     return {
         "items": items,
         "total": total,
         "skip": skip,
         "limit": limit
     }
+
+@router.get("/api/audit-logs/{log_id}/details")
+def get_audit_log_details(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    return service.get_audit_log_details(db, log_id)
 
 # Blocked Sessions
 @router.get("/api/blocked-sessions", response_model=PaginatedBlockedSessions)
@@ -171,3 +195,37 @@ def get_alert_replay(
     current_employee: Employee = Depends(get_current_employee)
 ):
     return service.get_alert_replay(db, alert_id)
+
+# ── Attack Replay Center (Admin-only) ────────────────────────────────────────
+@router.get("/api/attack-replay")
+def get_attack_replay_list(
+    skip: int = Query(0),
+    limit: int = Query(50),
+    user_id: Optional[str] = Query(None),
+    request_id: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    user_role: Optional[str] = Query(None),
+    attack_category: Optional[str] = Query(None),
+    threat_level: Optional[str] = Query(None),
+    decision: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    return service.get_attack_replay_list(
+        db, skip=skip, limit=limit,
+        user_id=user_id, request_id=request_id,
+        region=region, user_role=user_role,
+        attack_category=attack_category, threat_level=threat_level,
+        decision=decision, start_date=start_date, end_date=end_date
+    )
+
+@router.get("/api/attack-replay/{log_id}")
+def get_attack_replay_detail(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    return service.get_attack_replay_detail(db, log_id)
+

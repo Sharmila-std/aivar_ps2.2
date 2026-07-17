@@ -13,6 +13,8 @@ import NotFound from './pages/NotFound';
 import AIWorkspace from './pages/AIWorkspace';
 import PendingTasks from './pages/PendingTasks';
 import IncidentReplay from './pages/IncidentReplay';
+import AttackReplay from './pages/AttackReplay';
+import PolicySimulator from './pages/PolicySimulator';
 
 // Protected Route Wrapper Component
 const ProtectedRoute = ({ children }) => {
@@ -102,6 +104,26 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <IncidentReplay />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/attack-replay"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <AttackReplay />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/policy-simulator"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <PolicySimulator />
               </MainLayout>
             </ProtectedRoute>
           }

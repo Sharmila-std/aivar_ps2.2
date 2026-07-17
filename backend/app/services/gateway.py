@@ -280,14 +280,14 @@ class SecurityGateway:
                 login_time_str = sess_record.login_time.isoformat() if hasattr(sess_record.login_time, "isoformat") else str(sess_record.login_time)
 
         return {
-            "user_id": user.employee_id,
+            "user_id": getattr(user, "employee_id", None) or getattr(user, "customer_id", None) or getattr(user, "user_id", "unknown"),
             "role": role_name,
             "session_id": session_id or "sess_direct_api",
             "region": getattr(user, "region", None) if role_name != "Admin" else None,
             "department": dept,
-            "customer_id": user.customer_id if role_name == "Customer" else None,
-            "manager_id": user.employee_id if role_name == "Manager" else None,
-            "employee_id": user.employee_id if role_name != "Customer" else None,
+            "customer_id": getattr(user, "customer_id", None) if role_name == "Customer" else None,
+            "manager_id": getattr(user, "employee_id", None) if role_name == "Manager" else None,
+            "employee_id": getattr(user, "employee_id", None) if role_name != "Customer" else None,
             "login_time": login_time_str
         }
 
@@ -858,6 +858,34 @@ class SecurityGateway:
             db.commit()
             alert_id = alert.alert_id
 
+            # ── PRIMARY BLOCKED AUDIT LOG ─────────────────────────────────────
+            # This is the entry shown in Attack Replay Center (decision = "Blocked")
+            primary_log_id = None
+            try:
+                primary_log_obj = AuditLog(
+                    user_id=user_id,
+                    session_id=sess_id,
+                    tool_name=tool_call.get("tool") if isinstance(tool_call, dict) else "gateway",
+                    operation=op,
+                    resource=res,
+                    decision="Blocked",
+                    reason=reason,
+                    risk_score=95 if is_critical else 50,
+                    status="blocked",
+                    original_prompt=prompt,
+                    generated_tool=json.dumps(tool_call) if tool_call else None,
+                    decision_trace=decision_trace_str,
+                    security_alert_id=alert_id,
+                    execution_time=metrics_total
+                )
+                db.add(primary_log_obj)
+                db.commit()
+                db.refresh(primary_log_obj)
+                primary_log_id = primary_log_obj.log_id
+            except Exception as _e:
+                print(f"[_build_blocked_response] Failed to write primary Blocked audit log: {_e}")
+            # ─────────────────────────────────────────────────────────────────
+
             # 4. Audit: Alert Creation
             db.add(AuditLog(
                 user_id=user_id,
@@ -949,6 +977,7 @@ class SecurityGateway:
 
         return {
             "success": False,
+            "log_id": primary_log_id,
             "error": {
                 "status": "BLOCKED",
                 "decision": "DENY",
@@ -961,7 +990,8 @@ class SecurityGateway:
                 "violation_count": v_count,
                 "threat_level": threat_level,
                 "session_terminated": session_terminated,
-                "alert_id": alert_id
+                "alert_id": alert_id,
+                "log_id": primary_log_id
             },
             "metrics": {
                 "status": "Blocked",
@@ -1031,21 +1061,9 @@ Keep the analysis professional, concise, and structured. Return ONLY the markdow
 *   **Recommended Action**: Review user permissions or notify administrator.
 """
 
-    def _audit_block(self, db: Session, user: Any, tool: str, operation: str, reason: str) -> None:
-        try:
-            db.add(AuditLog(
-                user_id=user.employee_id,
-                tool_name=tool,
-                operation=operation,
-                resource="gateway",
-                decision="Blocked",
-                reason=reason,
-                risk_score=7,
-                status="blocked"
-            ))
-            db.commit()
-        except Exception:
-            pass
+    def _audit_block(self, db: Session, user: Any, tool: str, operation: str, reason: str, session_id: str = None, prompt: str = None, tool_call: Any = None, decision_trace: str = None, alert_id: int = None) -> None:
+        pass
+
 
     def _levenshtein_distance(self, s1: str, s2: str) -> int:
         if len(s1) < len(s2):
@@ -1085,8 +1103,9 @@ Keep the analysis professional, concise, and structured. Return ONLY the markdow
         return closest_name
 
 def enforce_regional_boundary_rest(db: Session, current_employee: Any, customer_region: str, action: str, resource_id: str):
-    role_name = getattr(current_employee, "role", "Customer")
-    if role_name == "Admin" or role_name == "Customer":
+    role_name = getattr(current_employee, "role", "Customer") or "Customer"
+    role_lower = str(role_name).lower()
+    if role_lower in ("admin", "customer"):
         return
         
     manager_region = getattr(current_employee, "region", None)

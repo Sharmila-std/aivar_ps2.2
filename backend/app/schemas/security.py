@@ -52,6 +52,10 @@ class AuditLogCreate(AuditLogBase):
 class AuditLogOut(AuditLogBase):
     log_id: int
     timestamp: datetime
+    user_role: Optional[str] = None
+    region: Optional[str] = None
+    severity: Optional[str] = None
+    request_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

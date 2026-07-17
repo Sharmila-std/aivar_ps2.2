@@ -1,7 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import sys
+import email.utils
 from ..config import settings
 
 def send_email(to_email: str, subject: str, body: str) -> bool:
@@ -20,12 +20,13 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         return True
 
     try:
-        # Create message
-        msg = MIMEMultipart()
+        # Use plain MIMEText (not MIMEMultipart) to avoid triggering Gmail delivery status notifications
+        msg = MIMEText(body, 'plain', 'utf-8')
         msg['From'] = settings.SMTP_FROM
         msg['To'] = to_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        msg['Date'] = email.utils.formatdate(localtime=True)
+        msg['Message-ID'] = email.utils.make_msgid(domain=settings.SMTP_FROM.split('@')[-1])
 
         # Connect to SMTP
         server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5.0)
@@ -34,9 +35,10 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         server.ehlo()
         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         server.sendmail(settings.SMTP_FROM, to_email, msg.as_string())
-        server.close()
+        server.quit()
         print("[EMAIL] SMTP email sent successfully!", file=sys.stderr)
         return True
     except Exception as e:
         print(f"[EMAIL] SMTP email sending failed: {e}. (Logged to console above)", file=sys.stderr)
         return True
+

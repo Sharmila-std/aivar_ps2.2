@@ -68,6 +68,27 @@ def execute_tool_call(
     if prompt:
         explanation = service.generate_human_explanation(prompt, result)
         result["explanation"] = explanation
+        
+        # Unconditionally save the refined LLM explanation to the AuditLog database entry
+        log_id = result.get("log_id") or result.get("error", {}).get("log_id")
+        if log_id:
+            try:
+                from ..models.security import AuditLog
+                import json
+                log_entry = db.query(AuditLog).filter(AuditLog.log_id == log_id).first()
+                if log_entry:
+                    trace_data = {}
+                    if log_entry.decision_trace:
+                        try:
+                            trace_data = json.loads(log_entry.decision_trace)
+                        except Exception:
+                            pass
+                    # Inject explanation to trace dictionary
+                    trace_data["explanation"] = explanation
+                    log_entry.decision_trace = json.dumps(trace_data)
+                    db.commit()
+            except Exception as e:
+                print(f"Failed to update AuditLog {log_id} with human explanation: {e}")
     else:
         result["explanation"] = "No prompt provided to generate human explanation."
         

@@ -301,10 +301,15 @@ const ManagerPendingTasks = () => {
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-[10px] font-bold tracking-wider text-violet-400 bg-violet-500/10 px-2.5 py-1 rounded-full uppercase flex items-center gap-1.5">
-                      <User size={10} />
-                      Profile Update
-                    </span>
+                    {(() => {
+                      const isDeletion = task.updates_json && (task.updates_json.includes('"status": "PENDING_DELETE"') || task.updates_json.includes('"action": "DELETE"'));
+                      return (
+                        <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full uppercase flex items-center gap-1.5 ${isDeletion ? 'text-rose-400 bg-rose-500/10' : 'text-violet-400 bg-violet-500/10'}`}>
+                          {isDeletion ? <Trash2 size={10} /> : <User size={10} />}
+                          {isDeletion ? 'Customer Deletion' : 'Profile Update'}
+                        </span>
+                      );
+                    })()}
                     <span className="text-xs text-slate-400 font-mono bg-slate-950/60 px-2 py-0.5 rounded">
                       {task.customer_id}
                     </span>
@@ -440,20 +445,25 @@ const ManagerPendingTasks = () => {
                 Close
               </button>
               {taskType === 'profile_update' ? (
-                <>
-                  <button 
-                    onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'REJECT')}
-                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
-                  >
-                    Reject Update
-                  </button>
-                  <button 
-                    onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'APPROVE')}
-                    className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors"
-                  >
-                    Approve Update
-                  </button>
-                </>
+                (() => {
+                  const isDeletion = selectedTask.updates_json && (selectedTask.updates_json.includes('"status": "PENDING_DELETE"') || selectedTask.updates_json.includes('"action": "DELETE"'));
+                  return (
+                    <>
+                      <button 
+                        onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'REJECT')}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
+                      >
+                        {isDeletion ? 'Reject Deletion' : 'Reject Update'}
+                      </button>
+                      <button 
+                        onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'APPROVE')}
+                        className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors"
+                      >
+                        {isDeletion ? 'Approve Deletion' : 'Approve Update'}
+                      </button>
+                    </>
+                  );
+                })()
               ) : taskType === 'creation' ? (
                 <>
                   <button 

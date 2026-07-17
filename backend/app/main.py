@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 import json
-from .routes import auth, customers, orders, employees, security, sessions, dashboard, ai
+from .routes import auth, customers, orders, employees, security, sessions, dashboard, ai, policy_simulator
 
 class PIIRedactionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -124,6 +124,7 @@ app.include_router(security.router)
 app.include_router(sessions.router)
 app.include_router(dashboard.router)
 app.include_router(ai.router)
+app.include_router(policy_simulator.router)
 
 from .database import fallback_engine, Base
 Base.metadata.create_all(bind=fallback_engine)

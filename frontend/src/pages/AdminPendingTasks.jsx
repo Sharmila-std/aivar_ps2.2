@@ -33,10 +33,17 @@ const AdminPendingTasks = () => {
         // Filter only 'Pending' status requests
         setRegistrations(res.data.filter(r => r.request_status === 'Pending'));
       } else {
-        const res = await api.get('/api/customers', {
-          params: { status: 'PENDING_DELETE', limit: 100 }
+        // Fetch from pending-updates, filter deletion tasks (PENDING_DELETE) that are still Pending
+        const res = await api.get('/api/customers/pending-updates');
+        const allUpdates = res.data || [];
+        const deletionTasks = allUpdates.filter(t => {
+          if (t.request_status !== 'Pending') return false;
+          try {
+            const updates = typeof t.updates_json === 'string' ? JSON.parse(t.updates_json) : (t.updates || {});
+            return updates.status === 'PENDING_DELETE';
+          } catch { return false; }
         });
-        setDeletions(res.data.items || []);
+        setDeletions(deletionTasks);
       }
     } catch (err) {
       console.error('Error fetching admin pending tasks', err);
@@ -76,30 +83,29 @@ const AdminPendingTasks = () => {
     }
   };
 
-  const handleApproveDeletion = async (customerId) => {
+  const handleApproveDeletion = async (requestId) => {
     try {
-      await api.delete(`/api/customers/${customerId}`);
-      setSuccess(`Customer account ${customerId} permanently deleted.`);
+      await api.put(`/api/customers/pending-updates/${requestId}`, { action: 'APPROVE' });
+      setSuccess('Customer deletion approved. Account permanently removed.');
       setSelectedTask(null);
       fetchTasks();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       console.error(err);
-      setError('Failed to delete customer profile.');
+      setError('Failed to approve customer deletion.');
     }
   };
 
-  const handleRejectDeletion = async (customerId) => {
+  const handleRejectDeletion = async (requestId) => {
     try {
-      // Revert status to Approved
-      await api.put(`/api/customers/${customerId}`, { status: 'Approved' });
-      setSuccess('Customer account deletion request rejected. Account restored to Approved.');
+      await api.put(`/api/customers/pending-updates/${requestId}`, { action: 'REJECT' });
+      setSuccess('Customer deletion request rejected. Account restored to active.');
       setSelectedTask(null);
       fetchTasks();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       console.error(err);
-      setError('Failed to reject deletion request.');
+      setError('Failed to reject customer deletion request.');
     }
   };
 
@@ -232,7 +238,7 @@ const AdminPendingTasks = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {deletions.map((task) => (
               <div 
-                key={task.customer_id}
+                key={task.request_id}
                 className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between hover:border-slate-700 transition-all duration-300 group"
               >
                 <div>
@@ -246,13 +252,13 @@ const AdminPendingTasks = () => {
                     </span>
                   </div>
                   <h3 className="font-semibold text-slate-200 group-hover:text-slate-100 transition-colors">
-                    {task.full_name}
+                    Customer ID: {task.customer_id}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">{task.email}</p>
+                  <p className="text-xs text-slate-400 mt-1">Request #{task.request_id} · Pending Deletion Approval</p>
                   
                   <div className="flex items-center gap-2 mt-4 text-xs text-slate-500">
-                    <MapPin size={12} />
-                    <span>Region: {task.region || 'Global'}</span>
+                    <Clock size={12} />
+                    <span>Requested: {task.created_at ? new Date(task.created_at).toLocaleDateString() : 'N/A'}</span>
                   </div>
                 </div>
 
@@ -262,17 +268,17 @@ const AdminPendingTasks = () => {
                     className="flex-1 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs rounded-xl flex items-center justify-center gap-2 transition-all font-medium"
                   >
                     <Eye size={14} />
-                    View Profile
+                    View Details
                   </button>
                   <button
-                    onClick={() => handleApproveDeletion(task.customer_id)}
+                    onClick={() => handleApproveDeletion(task.request_id)}
                     className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl flex items-center justify-center transition-all"
                     title="Confirm Delete"
                   >
                     <Check size={14} />
                   </button>
                   <button
-                    onClick={() => handleRejectDeletion(task.customer_id)}
+                    onClick={() => handleRejectDeletion(task.request_id)}
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center justify-center transition-all"
                     title="Reject Delete"
                   >
@@ -345,25 +351,28 @@ const AdminPendingTasks = () => {
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
-                      <p className="text-sm font-mono font-bold text-rose-400">{selectedTask.customer_id}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Request ID</p>
+                      <p className="text-sm font-mono font-bold text-rose-400">#{selectedTask.request_id}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Full Name</p>
-                      <p className="text-sm font-medium text-slate-350">{selectedTask.full_name}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
+                      <p className="text-sm font-mono text-indigo-300">{selectedTask.customer_id}</p>
                     </div>
                     <div className="col-span-2">
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Email</p>
-                      <p className="text-sm font-medium text-slate-350">{selectedTask.email}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Action Requested</p>
+                      <p className="text-sm font-medium text-rose-300">Permanent Account Deletion</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Region</p>
-                      <p className="text-sm font-medium text-slate-350">{selectedTask.region || 'Global'}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Status</p>
+                      <p className="text-sm font-medium text-amber-400">{selectedTask.request_status}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Address</p>
-                      <p className="text-sm font-medium text-slate-350">{selectedTask.address}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Submitted</p>
+                      <p className="text-sm text-slate-400">{selectedTask.created_at ? new Date(selectedTask.created_at).toLocaleDateString() : 'N/A'}</p>
                     </div>
+                  </div>
+                  <div className="mt-4 p-3 bg-rose-500/5 border border-rose-500/20 rounded-xl text-xs text-rose-300">
+                    ⚠️ Approving this request will <strong>permanently delete</strong> customer account <strong>{selectedTask.customer_id}</strong> from the system. This action cannot be undone.
                   </div>
                 </>
               )}
@@ -394,13 +403,13 @@ const AdminPendingTasks = () => {
               ) : (
                 <>
                   <button 
-                    onClick={() => handleRejectDeletion(selectedTask.customer_id)}
+                    onClick={() => handleRejectDeletion(selectedTask.request_id)}
                     className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
                   >
                     Reject Delete
                   </button>
                   <button 
-                    onClick={() => handleApproveDeletion(selectedTask.customer_id)}
+                    onClick={() => handleApproveDeletion(selectedTask.request_id)}
                     className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors"
                   >
                     Approve Delete

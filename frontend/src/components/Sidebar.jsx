@@ -11,7 +11,9 @@ import {
   Database,
   Menu,
   Bot,
-  ClipboardList
+  ClipboardList,
+  Swords,
+  Shield
 } from 'lucide-react';
 import api from '../api';
 
@@ -75,8 +77,12 @@ const Sidebar = () => {
       { name: 'Employees', path: '/employees', icon: UserCheck },
       { name: 'Pending Tasks', path: '/pending-tasks', icon: ClipboardList },
       { name: 'Security & Roles', path: '/roles', icon: ShieldAlert },
-      { name: 'Settings', path: '/settings', icon: Settings },
     ];
+    if (role === 'Admin') {
+      menuItems.push({ name: '🛡 Attack Replay', path: '/attack-replay', icon: Swords });
+      menuItems.push({ name: '🛡 Policy Simulator', path: '/policy-simulator', icon: Shield });
+    }
+    menuItems.push({ name: 'Settings', path: '/settings', icon: Settings });
   }
 
   return (

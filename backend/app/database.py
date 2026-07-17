@@ -7,30 +7,30 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 
 # Active database configuration state
-USE_MONGO = False
+USE_MONGO = True
 mongo_client = None
 
-# Fallback database URL (Neon PostgreSQL containing all seeded tables and records)
-FALLBACK_URL = "postgresql://neondb_owner:npg_h8akAGBUlO6T@ep-withered-night-ah3ppnip.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
-fallback_engine = create_engine(FALLBACK_URL)
+# Dummy local in-memory SQLite database for SQLAlchemy metadata/relationships import compat
+fallback_engine = create_engine("sqlite:///:memory:")
 SqliteSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=fallback_engine)
 
-# Try connecting to MongoDB Atlas if database URL indicates mongodb
-if settings.DATABASE_URL.startswith("mongodb"):
-    try:
-        import pymongo
-        # Short timeout to avoid hangs on blocked IPs
-        mongo_client = pymongo.MongoClient(
-            settings.DATABASE_URL,
-            serverSelectionTimeoutMS=3000,
-            connectTimeoutMS=3000
-        )
-        # Test connection
-        mongo_client.admin.command('ping')
-        USE_MONGO = True
-        print("Database Connection: Successfully connected to MongoDB Atlas!")
-    except Exception as e:
-        print(f"Database Connection Warning: MongoDB Atlas connection failed ({e}). Falling back to Neon PostgreSQL.")
+# Unconditionally connect to MongoDB Atlas (required, no fallback)
+if not settings.DATABASE_URL.startswith("mongodb"):
+    raise Exception(f"CRITICAL: DATABASE_URL must start with 'mongodb' or 'mongodb+srv', but got: {settings.DATABASE_URL}")
+
+try:
+    import pymongo
+    # Short timeout to avoid hangs on startup
+    mongo_client = pymongo.MongoClient(
+        settings.DATABASE_URL,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000
+    )
+    # Test connection
+    mongo_client.admin.command('ping')
+    print("Database Connection: Successfully connected to MongoDB Atlas!")
+except Exception as e:
+    raise Exception(f"CRITICAL: Failed to connect to MongoDB Atlas. Render deployment will fail: {e}")
 
 # Dummy engine for SQLAlchemy metadata/relationships import compat
 engine = fallback_engine
@@ -449,9 +449,9 @@ def merge_filters(target, source):
 
 # Database Dependency Provider
 def SessionLocal():
-    if USE_MONGO:
-        return MongoSession(mongo_client, "aivar")
-    return SqliteSessionLocal()
+    if not mongo_client:
+        raise Exception("CRITICAL: MongoDB Atlas connection is not initialized.")
+    return MongoSession(mongo_client, "aivar")
 
 def get_db():
     db = SessionLocal()

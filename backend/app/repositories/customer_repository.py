@@ -27,8 +27,8 @@ class CustomerRepository:
             query = query.filter(Customer.region.ilike(region))
 
         # Filtering
-        if status and status.title() != "All":
-            query = query.filter(Customer.status == status.title())
+        if status and status.upper() != "ALL":
+            query = query.filter(Customer.status == status)
 
         # Search
         if search:
@@ -108,7 +108,7 @@ class CustomerRepository:
         return db.query(PendingCustomerUpdate).filter(PendingCustomerUpdate.request_id == request_id).first()
 
     def get_pending_updates_all(self, db: Session, skip: int = 0, limit: int = 100, region: Optional[str] = None) -> List[PendingCustomerUpdate]:
-        query = db.query(PendingCustomerUpdate)
+        query = db.query(PendingCustomerUpdate).filter(PendingCustomerUpdate.request_status == "Pending")
         if region:
             from ..models.customer import Customer
             matching_customers = db.query(Customer).filter(Customer.region.ilike(region)).all()
