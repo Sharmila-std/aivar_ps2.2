@@ -8,10 +8,12 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingAlerts, setPendingAlerts] = useState(0);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   const isAdmin = user?.role_name === 'Admin';
+  const isManager = user?.role_name === 'Manager';
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -24,6 +26,15 @@ const Dashboard = () => {
             params: { status: 'Pending Investigation', limit: 1 }
           });
           setPendingAlerts(alertRes.data.total);
+        } else if (isManager) {
+          const creationsRes = await api.get('/api/orders', { params: { status: 'Placed', limit: 100 } });
+          const cancellationsRes = await api.get('/api/orders', { params: { status: 'PENDING_DELETE', limit: 100 } });
+          const updatesRes = await api.get('/api/customers/pending-updates');
+          
+          const total = (creationsRes.data.items || []).length + 
+                        (cancellationsRes.data.items || []).length + 
+                        (updatesRes.data || []).length;
+          setPendingTasksCount(total);
         }
       } catch (err) {
         setError('Failed to fetch dashboard metrics.');
@@ -32,7 +43,7 @@ const Dashboard = () => {
       }
     };
     fetchStats();
-  }, [isAdmin]);
+  }, [isAdmin, isManager]);
 
   if (loading) {
     return (
@@ -75,6 +86,24 @@ const Dashboard = () => {
             className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-slate-100 rounded-xl text-[10px] font-bold tracking-wider transition shrink-0 uppercase"
           >
             Investigate
+          </a>
+        </div>
+      )}
+
+      {isManager && pendingTasksCount > 0 && (
+        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-5 rounded-2xl flex items-center justify-between gap-4 shadow-lg animate-pulse">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="text-rose-500 shrink-0 animate-bounce" size={20} />
+            <div>
+              <p className="text-rose-400 font-bold text-xs">Pending Tasks Require Attention</p>
+              <p className="text-slate-400 text-[10px] mt-0.5 font-medium">There are {pendingTasksCount} pending order placements, cancellations, or profile updates awaiting your review.</p>
+            </div>
+          </div>
+          <a
+            href="/pending-tasks"
+            className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-slate-100 rounded-xl text-[10px] font-bold tracking-wider transition shrink-0 uppercase"
+          >
+            Review Tasks
           </a>
         </div>
       )}

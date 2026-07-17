@@ -27,6 +27,7 @@ const Sidebar = () => {
   const role = user?.role_name || '';
 
   const [pendingAlertsCount, setPendingAlertsCount] = useState(0);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
   useEffect(() => {
     if (role === 'Admin') {
@@ -44,6 +45,52 @@ const Sidebar = () => {
       };
       fetchAlertsCount();
       const timer = setInterval(fetchAlertsCount, 10000);
+      return () => clearInterval(timer);
+    }
+  }, [role]);
+
+  useEffect(() => {
+    if (role === 'Manager') {
+      const fetchManagerTasks = async () => {
+        try {
+          const creationsRes = await api.get('/api/orders', { params: { status: 'Placed', limit: 100 } });
+          const cancellationsRes = await api.get('/api/orders', { params: { status: 'PENDING_DELETE', limit: 100 } });
+          const updatesRes = await api.get('/api/customers/pending-updates');
+          
+          const total = (creationsRes.data.items || []).length + 
+                        (cancellationsRes.data.items || []).length + 
+                        (updatesRes.data || []).length;
+          setPendingTasksCount(total);
+        } catch (err) {
+          console.error('Error fetching manager tasks count', err);
+        }
+      };
+      fetchManagerTasks();
+      const timer = setInterval(fetchManagerTasks, 10000);
+      return () => clearInterval(timer);
+    } else if (role === 'Admin') {
+      const fetchAdminTasks = async () => {
+        try {
+          const regsRes = await api.get('/api/customers/pending');
+          const pendingRegs = (regsRes.data || []).filter(r => r.request_status === 'Pending');
+
+          const updatesRes = await api.get('/api/customers/pending-updates');
+          const allUpdates = updatesRes.data || [];
+          const deletionTasks = allUpdates.filter(t => {
+            if (t.request_status !== 'Pending') return false;
+            try {
+              const updates = typeof t.updates_json === 'string' ? JSON.parse(t.updates_json) : (t.updates || {});
+              return updates.status === 'PENDING_DELETE';
+            } catch { return false; }
+          });
+
+          setPendingTasksCount(pendingRegs.length + deletionTasks.length);
+        } catch (err) {
+          console.error('Error fetching admin tasks count', err);
+        }
+      };
+      fetchAdminTasks();
+      const timer = setInterval(fetchAdminTasks, 10000);
       return () => clearInterval(timer);
     }
   }, [role]);
@@ -120,6 +167,11 @@ const Sidebar = () => {
               {item.name === 'Security & Roles' && pendingAlertsCount > 0 && (
                 <span className="h-5 min-w-5 px-1 bg-rose-600 border border-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center animate-pulse">
                   {pendingAlertsCount}
+                </span>
+              )}
+              {item.name === 'Pending Tasks' && pendingTasksCount > 0 && (
+                <span className="h-5 min-w-5 px-1 bg-rose-600 border border-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center animate-pulse">
+                  {pendingTasksCount}
                 </span>
               )}
             </Link>
