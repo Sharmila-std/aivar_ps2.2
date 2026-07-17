@@ -104,88 +104,90 @@ const Dashboard = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Recent Orders */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2">
-              <Clock size={16} className="text-indigo-400" />
-              Recent Orders
-            </h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                  <th className="pb-3">Order ID</th>
-                  <th className="pb-3">Customer ID</th>
-                  <th className="pb-3">Product</th>
-                  <th className="pb-3 text-right">Price</th>
-                  <th className="pb-3 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/40">
-                {recent_orders.map((o) => (
-                  <tr key={o.order_id} className="text-slate-300">
-                    <td className="py-3 font-semibold text-indigo-400">{o.order_id}</td>
-                    <td className="py-3 text-slate-400">{o.customer_id}</td>
-                    <td className="py-3 font-medium truncate max-w-[120px]">{o.product_name}</td>
-                    <td className="py-3 text-right font-semibold">${o.price.toFixed(2)}</td>
-                    <td className="py-3 text-right">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        o.order_status === 'Delivered' ? 'bg-green-500/10 text-green-400' :
-                        o.order_status === 'Shipped' ? 'bg-blue-500/10 text-blue-400' :
-                        o.order_status === 'Cancelled' ? 'bg-red-500/10 text-red-400' :
-                        'bg-amber-500/10 text-amber-400'
-                      }`}>
-                        {o.order_status}
-                      </span>
-                    </td>
+      {isAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Recent Orders */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2">
+                <Clock size={16} className="text-indigo-400" />
+                Recent Orders
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                    <th className="pb-3">Order ID</th>
+                    <th className="pb-3">Customer ID</th>
+                    <th className="pb-3">Product</th>
+                    <th className="pb-3 text-right">Price</th>
+                    <th className="pb-3 text-right">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40">
+                  {recent_orders.map((o) => (
+                    <tr key={o.order_id} className="text-slate-300">
+                      <td className="py-3 font-semibold text-indigo-400">{o.order_id}</td>
+                      <td className="py-3 text-slate-400">{o.customer_id}</td>
+                      <td className="py-3 font-medium truncate max-w-[120px]">{o.product_name}</td>
+                      <td className="py-3 text-right font-semibold">${o.price.toFixed(2)}</td>
+                      <td className="py-3 text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          o.order_status === 'Delivered' ? 'bg-green-500/10 text-green-400' :
+                          o.order_status === 'Shipped' ? 'bg-blue-500/10 text-blue-400' :
+                          o.order_status === 'Cancelled' ? 'bg-red-500/10 text-red-400' :
+                          'bg-amber-500/10 text-amber-400'
+                        }`}>
+                          {o.order_status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Recent Registered Customers */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2 mb-4">
-            <Users size={16} className="text-indigo-400" />
-            Recent Registered Customers
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                  <th className="pb-3">Customer ID</th>
-                  <th className="pb-3">Name</th>
-                  <th className="pb-3">Email</th>
-                  <th className="pb-3 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/40">
-                {recent_customers.map((c) => (
-                  <tr key={c.customer_id} className="text-slate-300">
-                    <td className="py-3 font-semibold text-indigo-400">{c.customer_id}</td>
-                    <td className="py-3 font-medium text-slate-200 truncate max-w-[100px]">{c.full_name}</td>
-                    <td className="py-3 text-slate-400 truncate max-w-[120px]">{c.email}</td>
-                    <td className="py-3 text-right">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        c.status === 'Approved' ? 'bg-green-500/10 text-green-400' :
-                        c.status === 'Suspended' ? 'bg-rose-500/10 text-rose-400' :
-                        'bg-amber-500/10 text-amber-400'
-                      }`}>
-                        {c.status}
-                      </span>
-                    </td>
+          {/* Recent Registered Customers */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2 mb-4">
+              <Users size={16} className="text-indigo-400" />
+              Recent Registered Customers
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                    <th className="pb-3">Customer ID</th>
+                    <th className="pb-3">Name</th>
+                    <th className="pb-3">Email</th>
+                    <th className="pb-3 text-right">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40">
+                  {recent_customers.map((c) => (
+                    <tr key={c.customer_id} className="text-slate-300">
+                      <td className="py-3 font-semibold text-indigo-400">{c.customer_id}</td>
+                      <td className="py-3 font-medium text-slate-200 truncate max-w-[100px]">{c.full_name}</td>
+                      <td className="py-3 text-slate-400 truncate max-w-[120px]">{c.email}</td>
+                      <td className="py-3 text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          c.status === 'Approved' ? 'bg-green-500/10 text-green-400' :
+                          c.status === 'Suspended' ? 'bg-rose-500/10 text-rose-400' :
+                          'bg-amber-500/10 text-amber-400'
+                        }`}>
+                          {c.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
