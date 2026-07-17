@@ -577,7 +577,7 @@ class AIService:
                 details = params
             
             o_id = details.get("order_id") or params.get("order_id") or f"ORD{random.randint(100000, 999999)}"
-            cust_id = params.get("customer_id") or details.get("customer_id") or (operator_id if operator_id.startswith("CUS") else "")
+            cust_id = params.get("customer_id") or details.get("customer_id") or (operator_id if operator_id and operator_id.upper().startswith("CUS") else "")
             
             ord_in = OrderCreate(
                 order_id=o_id,

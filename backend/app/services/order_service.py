@@ -57,7 +57,7 @@ class OrderService:
             order_in.price = Decimal(str(prod_info["price"] * order_in.quantity))
 
         # Force Placed if operator is a customer
-        is_customer = operator_id and operator_id.startswith("CUS")
+        is_customer = operator_id and operator_id.upper().startswith("CUS")
         status_val = order_in.order_status
         if is_customer:
             status_val = "Placed"
@@ -156,7 +156,7 @@ class OrderService:
             raise HTTPException(status_code=404, detail="Customer associated with this order not found")
 
         if operator_id:
-            if operator_id.startswith("CUS"):
+            if operator_id.upper().startswith("CUS"):
                 if db_order.customer_id != operator_id:
                     raise HTTPException(status_code=403, detail="You can only request deletion of your own orders.")
                 

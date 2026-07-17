@@ -389,10 +389,10 @@ class SecurityGateway:
             # Auto-resolve placeholder or name to customer_id by name lookup if necessary
             if tool == "crm.customer" and operation in ("read", "update", "delete"):
                 c_id = params.get("customer_id")
-                is_placeholder = not c_id or c_id == "CUSXXXXXX" or not c_id.startswith("CUS")
+                is_placeholder = not c_id or c_id.upper() == "CUSXXXXXX" or not c_id.upper().startswith("CUS")
                 if is_placeholder:
                     target_name = None
-                    if c_id and not c_id.startswith("CUS") and not c_id.startswith("{customer"):
+                    if c_id and not c_id.upper().startswith("CUS") and not c_id.startswith("{customer"):
                         target_name = c_id
                     elif params.get("full_name"):
                         target_name = params.get("full_name")
@@ -622,8 +622,8 @@ class SecurityGateway:
             # Step 4: Dispatch Tool Execution
             exec_start = time.perf_counter()
             try:
-                # Run the exact execution in CRM
-                res_data = self.ai_service.execute_tool_call(db, call, user.employee_id)
+                operator_id = getattr(user, "employee_id", None) or getattr(user, "customer_id", None)
+                res_data = self.ai_service.execute_tool_call(db, call, operator_id)
                 execution_results.append(res_data)
             except Exception as e:
                 execution_results.append({"success": False, "error": str(e)})
