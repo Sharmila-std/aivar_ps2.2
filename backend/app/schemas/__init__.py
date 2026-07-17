@@ -3,12 +3,12 @@ from .employee import EmployeeBase, EmployeeCreate, EmployeeUpdate, EmployeeOut,
 from .customer import (
     CustomerBase, CustomerCreate, CustomerUpdate, CustomerOut, PaginatedCustomers,
     PendingCustomerBase, PendingCustomerCreate, PendingCustomerUpdate, PendingCustomerOut,
-    CustomerActivityBase, CustomerActivityCreate, CustomerActivityOut
+    CustomerActivityBase, CustomerActivityCreate, CustomerActivityOut,
+    CustomerProfileUpdateRequestCreate, CustomerProfileUpdateRequestOut
 )
 from .order import (
     OrderBase, OrderCreate, OrderUpdate, OrderOut, PaginatedOrders,
-    OrderItemBase, OrderItemCreate, OrderItemOut,
-    RefundBase, RefundCreate, RefundUpdate, RefundOut, PaginatedRefunds
+    OrderItemBase, OrderItemCreate, OrderItemOut
 )
 from .security import (
     PermissionManifestBase, PermissionManifestCreate, PermissionManifestUpdate, PermissionManifestOut, PaginatedPermissionManifests,
@@ -25,9 +25,9 @@ __all__ = [
     "CustomerBase", "CustomerCreate", "CustomerUpdate", "CustomerOut", "PaginatedCustomers",
     "PendingCustomerBase", "PendingCustomerCreate", "PendingCustomerUpdate", "PendingCustomerOut",
     "CustomerActivityBase", "CustomerActivityCreate", "CustomerActivityOut",
+    "CustomerProfileUpdateRequestCreate", "CustomerProfileUpdateRequestOut",
     "OrderBase", "OrderCreate", "OrderUpdate", "OrderOut", "PaginatedOrders",
     "OrderItemBase", "OrderItemCreate", "OrderItemOut",
-    "RefundBase", "RefundCreate", "RefundUpdate", "RefundOut", "PaginatedRefunds",
     "PermissionManifestBase", "PermissionManifestCreate", "PermissionManifestUpdate", "PermissionManifestOut", "PaginatedPermissionManifests",
     "AuditLogBase", "AuditLogCreate", "AuditLogOut", "PaginatedAuditLogs",
     "BlockedSessionBase", "BlockedSessionCreate", "BlockedSessionUpdate", "BlockedSessionOut", "PaginatedBlockedSessions",

@@ -46,12 +46,20 @@ const AIWorkspace = () => {
     fetchSessionInfo();
   }, []);
 
+  const userObj = JSON.parse(localStorage.getItem('user') || '{}');
+  const roleName = userObj.role_name || '';
+
   // Suggested Prompts
-  const suggestedPrompts = [
+  const suggestedPrompts = roleName === 'Customer' ? [
+    "Show my profile details",
+    "Request a new order for Gold Support Plan",
+    "Submit profile update request to change address to 456 Lake Road",
+    "List my purchase orders"
+  ] : [
     "Show customer CUS000001",
     "Create customer John Smith",
     "Delete customer CUS000010",
-    "List pending refunds",
+    "List all orders",
     "Show employee EMP000001",
     "Show dashboard summary"
   ];

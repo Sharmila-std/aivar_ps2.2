@@ -125,6 +125,9 @@ app.include_router(sessions.router)
 app.include_router(dashboard.router)
 app.include_router(ai.router)
 
+from .database import fallback_engine, Base
+Base.metadata.create_all(bind=fallback_engine)
+
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "service": "crm-backend", "phase": 1}

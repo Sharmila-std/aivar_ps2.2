@@ -2,6 +2,7 @@ import re
 import httpx
 import json
 import time
+import random
 from typing import Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
 
@@ -10,10 +11,10 @@ from .customer_service import CustomerService
 from .order_service import OrderService
 from .employee_service import EmployeeService
 from ..schemas.customer import CustomerCreate, CustomerUpdate
-from ..schemas.order import OrderCreate, OrderUpdate, RefundUpdate
+from ..schemas.order import OrderCreate, OrderUpdate
 from ..schemas.employee import EmployeeCreate, EmployeeUpdate
 from ..models.customer import Customer
-from ..models.order import Order, Refund
+from ..models.order import Order
 from ..models.employee import Employee
 
 # Define LLM System prompt outlining JSON schema constraints
@@ -36,8 +37,9 @@ The supported tools, operations, and parameter structures are:
 
 1. Customer Tool ("crm.customer"):
    - "read": Read a customer profile. Parameters: {"customer_id": "CUSXXXXXX"}
-   - "create": Create a new customer profile. Parameters: {"full_name": "...", "email": "...", "phone": "...", "address": "...", "status": "...", "password": "..."}
-   - "update": Update an existing customer profile. Parameters: {"customer_id": "CUSXXXXXX", "full_name": "...", "email": "..."}
+   - "create": Create a new customer profile. Parameters: {"full_name": "...", "email": "...", "phone": "...", "address": "...", "status": "...", "password": "...", "region": "...", "aadhaar_number": "...", "pan_number": "...", "card_number": "..."}
+   - "update": Update an existing customer profile directly. Parameters: {"customer_id": "CUSXXXXXX", "full_name": "...", "email": "..."}
+   - "update_request": Submit a profile update request. Parameters: {"customer_id": "CUSXXXXXX", "updates": {"phone": {"new_value": "9123456789"}, "address": {"new_value": "New Address"}}}
    - "delete": Delete a customer profile. Parameters: {"customer_id": "CUSXXXXXX"}
    - "search": Search customer profiles. Parameters: {"query": "..."}
    - "list": List customer profiles. Parameters: {"status": "...", "skip": 0, "limit": 10}
@@ -46,28 +48,20 @@ The supported tools, operations, and parameter structures are:
    - "read": Read an order details. Parameters: {"order_id": "ORDXXXXXX"}
    - "list": List purchase orders. Parameters: {"status": "...", "skip": 0, "limit": 10}
    - "create": Create order. Parameters: {"customer_id": "...", "product_name": "...", "category": "...", "quantity": 1, "price": 99.99, "delivery_address": "...", "payment_method": "...", "payment_status": "...", "order_status": "..."}
+   - "create_request": Create a new order request. Parameters: {"customer_id": "CUSXXXXXX", "order_details": {"product_name": "...", "category": "...", "quantity": 1, "price": 99.99, "delivery_address": "...", "payment_method": "...", "payment_status": "..."}}
    - "update": Update order details. Parameters: {"order_id": "ORDXXXXXX", "order_status": "..."}
    - "delete": Delete order. Parameters: {"order_id": "ORDXXXXXX"}
 
-3. Refunds Tool ("crm.refund"):
-   - "read": Read a refund ticket. Parameters: {"refund_id": "REFXXXXXX"}
-   - "list": List refunds. Parameters: {"status": "...", "skip": 0, "limit": 10}
-   - "create": Create a refund request. Parameters: {"order_id": "ORDXXXXXX", "refund_reason": "...", "refund_amount": 99.99}
-   - "approve": Approve a pending refund. Parameters: {"refund_id": "REFXXXXXX"}
-   - "reject": Reject a pending refund. Parameters: {"refund_id": "REFXXXXXX"}
-   - "update": Update a refund ticket. Parameters: {"refund_id": "REFXXXXXX", "refund_status": "..."}
-
-4. Employees Tool ("crm.employee"):
+3. Employees Tool ("crm.employee"):
    - "read": Read an employee profile. Parameters: {"employee_id": "EMPXXXXXX"}
-   - "create": Create employee account. Parameters: {"full_name": "...", "email": "...", "role_id": 1, "password": "..."}
-   - "update": Update employee profile or roles. Parameters: {"employee_id": "EMPXXXXXX", "role_id": 2}
+   - "create": Create employee account. Parameters: {"full_name": "...", "email": "...", "role_id": 1, "password": "...", "region": "...", "role": "..."}
+   - "update": Update employee profile or roles. Parameters: {"employee_id": "EMPXXXXXX", "role_id": 2, "region": "..."}
    - "delete": Delete employee account. Parameters: {"employee_id": "EMPXXXXXX"}
 
-5. Dashboard Tool ("crm.dashboard"):
+4. Dashboard Tool ("crm.dashboard"):
    - "show_statistics": Return KPI statistics. Parameters: {}
    - "recent_customers": Return 5 recent customers. Parameters: {}
    - "recent_orders": Return 5 recent orders. Parameters: {}
-   - "recent_refunds": Return 5 recent refunds. Parameters: {}
 """
 
 class AIService:
@@ -174,8 +168,6 @@ class AIService:
             shared_cust_id = next((r["parameters"]["customer_id"] for r in results if isinstance(r, dict) and "customer_id" in r.get("parameters", {})), None)
             shared_emp_id = next((r["parameters"]["employee_id"] for r in results if isinstance(r, dict) and "employee_id" in r.get("parameters", {})), None)
             shared_ord_id = next((r["parameters"]["order_id"] for r in results if isinstance(r, dict) and "order_id" in r.get("parameters", {})), None)
-            shared_ref_id = next((r["parameters"]["refund_id"] for r in results if isinstance(r, dict) and "refund_id" in r.get("parameters", {})), None)
-
             for r in results:
                 if isinstance(r, dict) and "parameters" in r:
                     if shared_cust_id and "customer_id" not in r["parameters"] and r.get("tool") == "crm.customer":
@@ -184,8 +176,6 @@ class AIService:
                         r["parameters"]["employee_id"] = shared_emp_id
                     if shared_ord_id and "order_id" not in r["parameters"] and r.get("tool") == "crm.order":
                         r["parameters"]["order_id"] = shared_ord_id
-                    if shared_ref_id and "refund_id" not in r["parameters"] and r.get("tool") == "crm.refund":
-                        r["parameters"]["refund_id"] = shared_ref_id
 
             if len(results) > 1:
                 return results
@@ -204,8 +194,6 @@ class AIService:
                 return {"tool": "crm.dashboard", "operation": "recent_customers", "parameters": {}}
             elif "recent order" in plow:
                 return {"tool": "crm.dashboard", "operation": "recent_orders", "parameters": {}}
-            elif "recent refund" in plow:
-                return {"tool": "crm.dashboard", "operation": "recent_refunds", "parameters": {}}
             else:
                 return {"tool": "crm.dashboard", "operation": "show_statistics", "parameters": {}}
 
@@ -239,9 +227,6 @@ class AIService:
             elif "order" in plow or "ord" in plow:
                 o_id_match = re.search(r'(ord\d+)', plow)
                 return {"tool": "crm.order", "operation": "read", "parameters": {"order_id": o_id_match.group(1).upper() if o_id_match else None}}
-            elif "refund" in plow or "ref" in plow:
-                r_id_match = re.search(r'(ref\d+)', plow)
-                return {"tool": "crm.refund", "operation": "read", "parameters": {"refund_id": r_id_match.group(1).upper() if r_id_match else None}}
             else:
                 c_id_match = re.search(r'(cus\d+)', plow)
                 return {"tool": "crm.customer", "operation": "read", "parameters": {"customer_id": c_id_match.group(1).upper() if c_id_match else None}}
@@ -278,26 +263,6 @@ class AIService:
         if match_ord_del:
             o_id = match_ord_del.group(2).upper()
             return {"tool": "crm.order", "operation": "delete", "parameters": {"order_id": o_id}}
-
-        # Refund approvals & list
-        match_ref_approve = re.search(r'approve\s+refund\s+(ref\d+)', plow)
-        if match_ref_approve:
-            r_id = match_ref_approve.group(1).upper()
-            return {"tool": "crm.refund", "operation": "approve", "parameters": {"refund_id": r_id}}
-
-        match_ref_reject = re.search(r'reject\s+refund\s+(ref\d+)', plow)
-        if match_ref_reject:
-            r_id = match_ref_reject.group(1).upper()
-            return {"tool": "crm.refund", "operation": "reject", "parameters": {"refund_id": r_id}}
-
-        match_ref_read = re.search(r'(show|read|get)\s+refund\s+(ref\d+)', plow)
-        if match_ref_read:
-            r_id = match_ref_read.group(2).upper()
-            return {"tool": "crm.refund", "operation": "read", "parameters": {"refund_id": r_id}}
-
-        if "refund" in plow and ("list" in plow or "show" in plow):
-            status = "Pending" if "pending" in plow else ("Approved" if "approved" in plow else ("Rejected" if "rejected" in plow else None))
-            return {"tool": "crm.refund", "operation": "list", "parameters": {"status": status} if status else {}}
 
         # Customer Creation (Create customer John Smith, etc.)
         match_cust_create = re.search(r'create\s+customer\s+([a-zA-Z\s]+)', p, re.IGNORECASE)
@@ -382,8 +347,6 @@ class AIService:
                         res_data = self._execute_customer(db, operation, params)
                     elif tool == "crm.order":
                         res_data = self._execute_order(db, operation, params, operator_id)
-                    elif tool == "crm.refund":
-                        res_data = self._execute_refund(db, operation, params)
                     elif tool == "crm.employee":
                         res_data = self._execute_employee(db, operation, params)
                     elif tool == "crm.dashboard":
@@ -430,8 +393,6 @@ class AIService:
                 result = self._execute_customer(db, operation, params, operator_id)
             elif tool == "crm.order":
                 result = self._execute_order(db, operation, params, operator_id)
-            elif tool == "crm.refund":
-                result = self._execute_refund(db, operation, params, operator_id)
             elif tool == "crm.employee":
                 result = self._execute_employee(db, operation, params)
             elif tool == "crm.dashboard":
@@ -495,7 +456,7 @@ class AIService:
             }
         elif operation == "create":
             # Generate a random unique customer ID
-            c_id = params.get("customer_id") or f"CUS{re.sub('[^0-9]', '', str(time.time()))[:6]}"
+            c_id = params.get("customer_id") or f"CUS{random.randint(100000, 999999)}"
             cust_in = CustomerCreate(
                 customer_id=c_id,
                 full_name=params.get("full_name", ""),
@@ -570,6 +531,17 @@ class AIService:
                 ],
                 "total": total
             }
+        elif operation == "update_request":
+            customer_id = params.get("customer_id")
+            if not customer_id:
+                raise ValueError("customer_id is required.")
+            updates = params.get("updates")
+            if not updates or not isinstance(updates, dict):
+                updates = {k: v for k, v in params.items() if k != "customer_id"}
+                if not updates:
+                    raise ValueError("updates dictionary containing fields is required.")
+            res = self.customer_service.create_update_request(db, customer_id, updates)
+            return {"customer_id": res.customer_id, "request_id": res.request_id, "status": res.request_status}
         else:
             raise ValueError(f"Unsupported operation '{operation}' on tool crm.customer")
 
@@ -598,21 +570,28 @@ class AIService:
                 "items": [{"order_id": o.order_id, "product_name": o.product_name, "order_status": o.order_status, "price": float(o.price)} for o in items],
                 "total": total
             }
-        elif operation == "create":
-            o_id = params.get("order_id") or f"ORD{re.sub('[^0-9]', '', str(time.time()))[:6]}"
+        elif operation in ("create", "create_request"):
+            # Extract details from parameters
+            details = params.get("order_details") if operation == "create_request" else params
+            if not details or not isinstance(details, dict):
+                details = params
+            
+            o_id = details.get("order_id") or params.get("order_id") or f"ORD{random.randint(100000, 999999)}"
+            cust_id = params.get("customer_id") or details.get("customer_id") or (operator_id if operator_id.startswith("CUS") else "")
+            
             ord_in = OrderCreate(
                 order_id=o_id,
-                customer_id=params.get("customer_id", ""),
-                product_name=params.get("product_name", ""),
-                category=params.get("category", "General"),
-                quantity=params.get("quantity", 1),
-                price=params.get("price", 0.0),
-                delivery_address=params.get("delivery_address", ""),
-                payment_method=params.get("payment_method", "Credit Card"),
-                payment_status=params.get("payment_status", "Paid"),
-                order_status=params.get("order_status", "Pending")
+                customer_id=cust_id,
+                product_name=details.get("product_name", ""),
+                category=details.get("category", "General"),
+                quantity=details.get("quantity", 1),
+                price=details.get("price", 0.0),
+                delivery_address=details.get("delivery_address", ""),
+                payment_method=details.get("payment_method", "Credit Card"),
+                payment_status=details.get("payment_status", "Paid"),
+                order_status=details.get("order_status", "Pending")
             )
-            res = self.order_service.create_order(db, ord_in)
+            res = self.order_service.create_order(db, ord_in, operator_id=operator_id)
             return {"order_id": res.order_id, "product_name": res.product_name, "order_status": res.order_status}
         elif operation == "update":
             order_id = params.get("order_id")
@@ -626,69 +605,24 @@ class AIService:
             if not order_id:
                 raise ValueError("order_id is required.")
             self.order_service.delete_order(db, order_id, operator_id)
-            return {"deleted": True, "order_id": order_id}
+            
+            from ..models.order import Order
+            existing = db.query(Order).filter(Order.order_id == order_id.upper()).first()
+            if existing:
+                return {
+                    "deleted": False,
+                    "pending_approval": True,
+                    "order_status": existing.order_status,
+                    "order_id": order_id,
+                    "message": "Cancellation request submitted for manager approval."
+                }
+            return {
+                "deleted": True,
+                "order_id": order_id,
+                "message": "Order permanently deleted."
+            }
         else:
             raise ValueError(f"Unsupported operation '{operation}' on tool crm.order")
-
-    def _execute_refund(self, db: Session, operation: str, params: Dict[str, Any], operator_id: Optional[str] = None) -> Any:
-        if operation == "read":
-            refund_id = params.get("refund_id")
-            if not refund_id:
-                raise ValueError("refund_id is required.")
-            res = self.order_service.get_refund(db, refund_id)
-            if not res:
-                raise ValueError(f"Refund ticket {refund_id} not found.")
-            return {
-                "refund_id": res.refund_id,
-                "order_id": res.order_id,
-                "refund_amount": float(res.refund_amount),
-                "refund_status": res.refund_status,
-                "refund_reason": res.refund_reason
-            }
-        elif operation == "list":
-            status = params.get("status")
-            skip = params.get("skip", 0)
-            limit = params.get("limit", 10)
-            items, total = self.order_service.get_refunds(db, status=status, skip=skip, limit=limit)
-            return {
-                "items": [{"refund_id": r.refund_id, "order_id": r.order_id, "refund_status": r.refund_status, "refund_amount": float(r.refund_amount)} for r in items],
-                "total": total
-            }
-        elif operation == "create":
-            r_id = params.get("refund_id") or f"REF{re.sub('[^0-9]', '', str(time.time()))[:6]}"
-            ref_in = RefundCreate(
-                refund_id=r_id,
-                customer_id=params.get("customer_id", ""),
-                order_id=params.get("order_id", ""),
-                refund_reason=params.get("refund_reason", ""),
-                refund_amount=params.get("refund_amount", 0.0),
-                refund_status=params.get("refund_status", "Requested")
-            )
-            res = self.order_service.create_refund(db, ref_in, operator_id)
-            return {
-                "refund_id": res.refund_id,
-                "order_id": res.order_id,
-                "customer_id": res.customer_id,
-                "refund_status": res.refund_status,
-                "refund_amount": float(res.refund_amount)
-            }
-        elif operation in ("approve", "reject"):
-            refund_id = params.get("refund_id")
-            if not refund_id:
-                raise ValueError("refund_id is required.")
-            status_val = "Approved" if operation == "approve" else "Rejected"
-            ref_in = RefundUpdate(refund_status=status_val)
-            res = self.order_service.update_refund(db, refund_id, ref_in, operator_id)
-            return {"refund_id": res.refund_id, "refund_status": res.refund_status, "refund_amount": float(res.refund_amount)}
-        elif operation == "update":
-            refund_id = params.get("refund_id")
-            if not refund_id:
-                raise ValueError("refund_id is required.")
-            ref_in = RefundUpdate(**{k: v for k, v in params.items() if k != "refund_id"})
-            res = self.order_service.update_refund(db, refund_id, ref_in, operator_id)
-            return {"refund_id": res.refund_id, "refund_status": res.refund_status}
-        else:
-            raise ValueError(f"Unsupported operation '{operation}' on tool crm.refund")
 
     def _execute_employee(self, db: Session, operation: str, params: Dict[str, Any]) -> Any:
         if operation == "read":
@@ -711,7 +645,9 @@ class AIService:
                 full_name=params.get("full_name", ""),
                 email=params.get("email", ""),
                 role_id=params.get("role_id", 1),
-                password=params.get("password", "tempPass123")
+                password=params.get("password", "tempPass123"),
+                region=params.get("region"),
+                role=params.get("role")
             )
             res = self.employee_service.create_employee(db, emp_in)
             return {"employee_id": res.employee_id, "full_name": res.full_name}
@@ -736,7 +672,6 @@ class AIService:
             return {
                 "total_customers": db.query(Customer).count(),
                 "total_orders": db.query(Order).count(),
-                "pending_refunds": db.query(Refund).filter(Refund.refund_status == "Pending").count(),
                 "total_employees": db.query(Employee).count()
             }
         elif operation == "recent_customers":
@@ -745,9 +680,6 @@ class AIService:
         elif operation == "recent_orders":
             items = db.query(Order).order_by(Order.order_date.desc()).limit(5).all()
             return [{"order_id": o.order_id, "product_name": o.product_name, "price": float(o.price)} for o in items]
-        elif operation == "recent_refunds":
-            items = db.query(Refund).order_by(Refund.created_at.desc()).limit(5).all()
-            return [{"refund_id": r.refund_id, "order_id": r.order_id, "refund_amount": float(r.refund_amount)} for r in items]
         else:
             raise ValueError(f"Unsupported operation '{operation}' on tool crm.dashboard")
 

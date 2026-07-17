@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X, User } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X, User, AlertCircle, Check, Brain, Sparkles, Send, Play, Terminal, UserCheck, Shield } from 'lucide-react';
 import api from '../api';
 
 const Customers = () => {
@@ -179,6 +179,113 @@ const Customers = () => {
 
   const totalPages = Math.ceil(total / limit);
 
+  // Profile Update Request state (for customers)
+  const [isUpdateRequestModalOpen, setIsUpdateRequestModalOpen] = useState(false);
+  const [updateRequestFields, setUpdateRequestFields] = useState({ phone: '', address: '' });
+  const [updateRequestLoading, setUpdateRequestLoading] = useState(false);
+  const [updateRequestSuccess, setUpdateRequestSuccess] = useState('');
+  const [updateRequestError, setUpdateRequestError] = useState('');
+
+  const handleSubmitUpdateRequest = async (e) => {
+    e.preventDefault();
+    setUpdateRequestLoading(true);
+    setUpdateRequestError('');
+    setUpdateRequestSuccess('');
+    
+    // Build updates dict with only non-empty fields
+    const updates = {};
+    if (updateRequestFields.phone.trim()) updates.phone = updateRequestFields.phone.trim();
+    if (updateRequestFields.address.trim()) updates.address = updateRequestFields.address.trim();
+    
+    if (Object.keys(updates).length === 0) {
+      setUpdateRequestError('Please fill in at least one field to update.');
+      setUpdateRequestLoading(false);
+      return;
+    }
+    
+    try {
+      const customerId = loggedInUser?.employee_id;
+      await api.post(`/api/customers/${customerId}/update-request`, { updates });
+      setUpdateRequestSuccess('Profile update request submitted successfully! Your regional manager will review it shortly.');
+      setUpdateRequestFields({ phone: '', address: '' });
+      setTimeout(() => {
+        setIsUpdateRequestModalOpen(false);
+        setUpdateRequestSuccess('');
+      }, 3000);
+    } catch (err) {
+      setUpdateRequestError(err.response?.data?.detail || 'Failed to submit update request. Please try again.');
+    } finally {
+      setUpdateRequestLoading(false);
+    }
+  };
+
+  // AI Profile Update Workspace state
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiToolCall, setAiToolCall] = useState(null);
+  const [aiExecutionResult, setAiExecutionResult] = useState(null);
+  const [aiSuccessMsg, setAiSuccessMsg] = useState('');
+  const [aiErrorMsg, setAiErrorMsg] = useState('');
+  const [aiStep, setAiStep] = useState('idle'); // idle, generating, generated, executing, completed
+
+  const handleAIGenerate = async (suggestedText) => {
+    const activePrompt = suggestedText || aiPrompt;
+    if (!activePrompt.trim()) return;
+
+    if (suggestedText) {
+      setAiPrompt(activePrompt);
+    }
+
+    setAiLoading(true);
+    setAiStep('generating');
+    setAiToolCall(null);
+    setAiExecutionResult(null);
+    setAiSuccessMsg('');
+    setAiErrorMsg('');
+
+    try {
+      const res = await api.post('/api/ai/generate', { prompt: activePrompt });
+      const tc = res.data.tool_call;
+      setAiToolCall(tc);
+      setAiStep('generated');
+    } catch (err) {
+      console.error(err);
+      setAiErrorMsg('Failed to generate tool JSON from prompt.');
+      setAiStep('idle');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAIExecute = async () => {
+    if (!aiToolCall) return;
+
+    setAiLoading(true);
+    setAiStep('executing');
+    setAiSuccessMsg('');
+    setAiErrorMsg('');
+    setAiExecutionResult(null);
+
+    try {
+      const res = await api.post('/api/ai/execute', { tool_call: aiToolCall, prompt: aiPrompt });
+      setAiExecutionResult(res.data);
+      if (res.data.success) {
+        setAiSuccessMsg('Profile update request submitted successfully via AI workspace! Pending regional manager review.');
+        setAiStep('completed');
+        setAiPrompt('');
+      } else {
+        setAiErrorMsg(res.data.error?.reason || 'Gateway blocked this operation.');
+        setAiStep('completed');
+      }
+    } catch (err) {
+      console.error(err);
+      setAiErrorMsg(err.response?.data?.detail || 'Failed to submit update request via AI workspace.');
+      setAiStep('completed');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   if (isCustomer) {
     const customer = customers[0];
     if (loading) {
@@ -197,78 +304,295 @@ const Customers = () => {
     }
     return (
       <div className="flex-1 p-8 space-y-6 overflow-y-auto max-h-[calc(100vh-4rem)] bg-slate-950">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">My Profile</h1>
-          <p className="text-slate-400 text-xs mt-1">Verify your customer profile and security records.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-100">My Profile</h1>
+            <p className="text-slate-400 text-xs mt-1">Verify details and submit profile update requests.</p>
+          </div>
+          <button
+            onClick={() => {
+              setUpdateRequestFields({ phone: customer.phone || '', address: customer.address || '' });
+              setIsUpdateRequestModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600/10 border border-violet-500/30 hover:bg-violet-600/20 text-violet-400 rounded-xl text-xs font-semibold transition-all duration-200"
+          >
+            <Edit size={14} />
+            Request Profile Update
+          </button>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-3xl shadow-2xl relative overflow-hidden">
-          {/* Neon background blur */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-[80px]"></div>
-          
-          <div className="flex flex-col md:flex-row gap-8 items-start relative z-10">
-            <div className="h-20 w-20 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <User size={36} />
-            </div>
-            
-            <div className="flex-1 space-y-6 text-sm text-white">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
-                  <p className="text-lg font-bold text-indigo-400 mt-1">{customer.customer_id}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Profile Status</p>
-                  <span className="inline-block mt-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/20">
-                    {customer.status}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="border-t border-slate-800/80 pt-6 grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Full Name</p>
-                  <p className="font-semibold text-slate-200 mt-1">{customer.full_name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Email Address</p>
-                  <p className="text-slate-300 mt-1">{customer.email}</p>
-                </div>
-              </div>
-              
-              <div className="border-t border-slate-800/80 pt-6 grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Phone Number</p>
-                  <p className="text-slate-300 mt-1 font-mono">{customer.phone}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Region</p>
-                  <p className="text-slate-300 mt-1">{customer.region || 'N/A'}</p>
-                </div>
-              </div>
-              
-              <div className="border-t border-slate-800/80 pt-6">
-                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Billing Address</p>
-                <p className="text-slate-300 mt-1">{customer.address}</p>
-              </div>
 
-              {/* Secure Credentials */}
-              <div className="border-t border-slate-800/80 pt-6 grid grid-cols-3 gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/40 mt-4">
-                <div>
-                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Aadhaar Number</p>
-                  <p className="text-xs text-slate-300 font-mono mt-1">{customer.aadhaar_number || '•••• •••• ••••'}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start max-w-7xl">
+          {/* Left Column: Customer Profile Details */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+            {/* Neon background blur */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-[80px]"></div>
+            
+            <div className="flex flex-col md:flex-row gap-8 items-start relative z-10">
+              <div className="h-20 w-20 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <User size={36} />
+              </div>
+              
+              <div className="flex-1 space-y-6 text-sm text-white">
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
+                    <p className="text-lg font-bold text-indigo-400 mt-1">{customer.customer_id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Profile Status</p>
+                    <span className="inline-block mt-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/20">
+                      {customer.status}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">PAN Number</p>
-                  <p className="text-xs text-slate-300 font-mono mt-1">{customer.pan_number || '••••••••••'}</p>
+                
+                <div className="border-t border-slate-800/80 pt-6 grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Full Name</p>
+                    <p className="font-semibold text-slate-200 mt-1">{customer.full_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Email Address</p>
+                    <p className="text-slate-300 mt-1">{customer.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Credit Card Number</p>
-                  <p className="text-xs text-slate-300 font-mono mt-1">{customer.card_number || '••••-••••-••••-••••'}</p>
+                
+                <div className="border-t border-slate-800/80 pt-6 grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Phone Number</p>
+                    <p className="text-slate-300 mt-1 font-mono">{customer.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Region</p>
+                    <p className="text-slate-300 mt-1">{customer.region || 'N/A'}</p>
+                  </div>
+                </div>
+                
+                <div className="border-t border-slate-800/80 pt-6">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Billing Address</p>
+                  <p className="text-slate-300 mt-1">{customer.address}</p>
+                </div>
+
+                {/* Secure Credentials */}
+                <div className="border-t border-slate-800/80 pt-6 grid grid-cols-3 gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/40 mt-4">
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Aadhaar Number</p>
+                    <p className="text-xs text-slate-300 font-mono mt-1">{customer.aadhaar_number || '•••• •••• ••••'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">PAN Number</p>
+                    <p className="text-xs text-slate-300 font-mono mt-1">{customer.pan_number || '••••••••••'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Credit Card Number</p>
+                    <p className="text-xs text-slate-300 font-mono mt-1">{customer.card_number || '••••-••••-••••-••••'}</p>
+                  </div>
+                </div>
+
+                {/* Read-only notice */}
+                <div className="border border-amber-500/20 bg-amber-500/5 rounded-xl p-3 flex items-start gap-2">
+                  <span className="text-amber-400 text-[10px] mt-0.5">⚠</span>
+                  <p className="text-[10px] text-amber-400/80">
+                    Your profile is read-only. To update your phone number or billing address, use the <strong className="text-amber-400">Request Profile Update</strong> button above or use the AI Profile Workspace on the right.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Right Column: AI profile update workspace */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex flex-col space-y-6">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/5 rounded-full blur-[80px]"></div>
+            
+            <div className="relative z-10 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-violet-500/10 text-violet-400 flex items-center justify-center">
+                  <Brain size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-100">AI Profile Workspace</h3>
+                  <p className="text-slate-400 text-xs mt-0.5">Interact using natural language to propose changes.</p>
+                </div>
+              </div>
+
+              {/* Suggested Templates */}
+              <div>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2">Suggested Prompt Templates</p>
+                <div className="flex flex-col gap-2">
+                  {[
+                    `update my phone to +91 9998887766`,
+                    `change my address to 123 Neon Road, Coimbatore`,
+                    `update phone to 9123456789 and address to Phase 3, Coimbatore`
+                  ].map((tpl) => (
+                    <button
+                      key={tpl}
+                      onClick={() => handleAIGenerate(tpl)}
+                      className="text-left px-3 py-2 bg-slate-950 border border-slate-800/80 rounded-xl text-[11px] text-slate-350 hover:bg-slate-850 hover:border-violet-500/40 transition-all font-medium flex items-center gap-2"
+                    >
+                      <Sparkles size={12} className="text-violet-400 shrink-0" />
+                      <span className="truncate">{tpl}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Prompt Input Form */}
+              <div className="space-y-2 pt-2">
+                <label className="block text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Your Request</label>
+                <div className="relative">
+                  <textarea
+                    rows="3"
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Type what you want to change, e.g. update my phone to 9876543210..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-3 pr-12 text-slate-200 text-xs focus:border-violet-500 focus:outline-none resize-none transition-all"
+                  />
+                  <button
+                    onClick={() => handleAIGenerate(null)}
+                    disabled={aiLoading || !aiPrompt.trim()}
+                    className="absolute right-3.5 bottom-3.5 h-8 w-8 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white flex items-center justify-center transition-all shadow-lg shadow-violet-600/10"
+                    title="Generate Tool Call"
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status / Steps */}
+              {aiStep !== 'idle' && (
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-4">
+                  {/* Pipeline Steps Indicator */}
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider pb-2 border-b border-slate-800/60">
+                    <span>Execution Pipeline</span>
+                    <span className="text-violet-400 capitalize">{aiStep}</span>
+                  </div>
+
+                  {/* Tool call view */}
+                  {aiToolCall && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Terminal size={12} className="text-violet-400" />
+                          Generated Tool Call JSON
+                        </span>
+                      </div>
+                      <pre className="p-3 bg-slate-950 border border-slate-900 rounded-xl text-[10px] font-mono text-violet-300 overflow-x-auto max-h-40">
+                        {JSON.stringify(aiToolCall, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Errors / Success */}
+                  {aiSuccessMsg && (
+                    <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] flex items-start gap-2">
+                      <Check size={14} className="shrink-0 mt-0.5" />
+                      <span>{aiSuccessMsg}</span>
+                    </div>
+                  )}
+                  {aiErrorMsg && (
+                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>{aiErrorMsg}</span>
+                    </div>
+                  )}
+
+                  {/* Execute Button */}
+                  {aiStep === 'generated' && (
+                    <button
+                      onClick={handleAIExecute}
+                      className="w-full py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Play size={12} />
+                      Propose Updates to Manager
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* PROFILE UPDATE REQUEST MODAL */}
+        {isUpdateRequestModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 relative shadow-2xl">
+              <button
+                onClick={() => {
+                  setIsUpdateRequestModalOpen(false);
+                  setUpdateRequestError('');
+                  setUpdateRequestSuccess('');
+                }}
+                className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"
+              >
+                <X size={18} />
+              </button>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="h-10 w-10 rounded-xl bg-violet-500/10 text-violet-400 flex items-center justify-center">
+                  <Edit size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-100 text-lg">Request Profile Update</h3>
+                  <p className="text-slate-400 text-xs mt-0.5">Changes will be reviewed by your regional manager</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-800/40 rounded-xl p-3 mb-4 mt-3">
+                <p className="text-[10px] text-slate-500">
+                  Fill in the fields you want to update. Leave a field blank if you don't want to change it. Your manager will review and either approve or reject the request.
+                </p>
+              </div>
+
+              {updateRequestSuccess && (
+                <div className="mb-4 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center gap-2">
+                  <Check size={14} />
+                  {updateRequestSuccess}
+                </div>
+              )}
+              {updateRequestError && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle size={14} />
+                  {updateRequestError}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmitUpdateRequest} className="space-y-4">
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">
+                    New Phone Number <span className="text-slate-600 font-normal">(leave blank to keep current)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`Current: ${customer.phone}`}
+                    value={updateRequestFields.phone}
+                    onChange={(e) => setUpdateRequestFields(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-violet-500 focus:outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 text-xs font-semibold mb-1.5">
+                    New Billing Address <span className="text-slate-600 font-normal">(leave blank to keep current)</span>
+                  </label>
+                  <textarea
+                    rows="3"
+                    placeholder={`Current: ${customer.address}`}
+                    value={updateRequestFields.address}
+                    onChange={(e) => setUpdateRequestFields(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-violet-500 focus:outline-none resize-none transition-all"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={updateRequestLoading}
+                  className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-semibold mt-2 transition-all"
+                >
+                  {updateRequestLoading ? 'Submitting...' : 'Submit Update Request'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, ChevronLeft, ChevronRight, X, ShoppingBag, Plus, RefreshCw, AlertCircle, Check } from 'lucide-react';
+import { Search, Eye, ChevronLeft, ChevronRight, X, ShoppingBag, Plus, AlertCircle, Check, Trash2 } from 'lucide-react';
 import api from '../api';
 
 const PREDEFINED_PRODUCTS = [
@@ -32,7 +32,6 @@ const Orders = () => {
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -43,11 +42,6 @@ const Orders = () => {
   const [deliveryAddress, setDeliveryAddress] = useState(isCustomer ? `Shipping Address for ${customerId}` : '');
   const [paymentMethod, setPaymentMethod] = useState('Credit Card');
   const [paymentStatus, setPaymentStatus] = useState('Paid');
-
-  // Refund Form State
-  const [refundOrderId, setRefundOrderId] = useState('');
-  const [refundReason, setRefundReason] = useState('');
-  const [refundAmount, setRefundAmount] = useState('');
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -121,34 +115,15 @@ const Orders = () => {
     }
   };
 
-  const handleCreateRefund = async (e) => {
-    e.preventDefault();
-    setFormLoading(true);
-    setErrorMsg('');
-    setSuccessMsg('');
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Are you sure you want to request deletion for this order?")) return;
     try {
-      const refundId = "REF" + Math.floor(100000 + Math.random() * 900000);
-      const payload = {
-        refund_id: refundId,
-        customer_id: customerId || '',
-        order_id: refundOrderId.toUpperCase(),
-        refund_reason: refundReason,
-        refund_amount: parseFloat(refundAmount),
-        refund_status: 'Requested'
-      };
-
-      await api.post('/api/refunds', payload);
-      setSuccessMsg('Refund request submitted successfully! Pending Regional Manager review.');
-      setTimeout(() => {
-        setIsRefundModalOpen(false);
-        setSuccessMsg('');
-        fetchOrders();
-      }, 2000);
+      await api.delete(`/api/orders/${orderId}`);
+      alert("Order deletion request submitted! Pending manager review.");
+      fetchOrders();
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.response?.data?.detail || 'Failed to submit refund claim.');
-    } finally {
-      setFormLoading(false);
+      alert(err.response?.data?.detail || "Failed to submit deletion request.");
     }
   };
 
@@ -200,13 +175,6 @@ const Orders = () => {
             >
               <Plus size={14} />
               Place Order
-            </button>
-            <button
-              onClick={() => setIsRefundModalOpen(true)}
-              className="bg-rose-600/10 border border-rose-500/20 hover:bg-rose-600/20 text-rose-400 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-            >
-              <RefreshCw size={14} />
-              Request Refund
             </button>
           </div>
         )}
@@ -290,7 +258,7 @@ const Orders = () => {
                       </span>
                     </td>
                     <td className="p-4 text-right text-slate-400">{new Date(o.order_date).toLocaleDateString()}</td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right flex justify-end gap-1.5">
                       <button
                         onClick={() => openViewModal(o)}
                         className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition"
@@ -298,6 +266,15 @@ const Orders = () => {
                       >
                         <Eye size={14} />
                       </button>
+                      {isCustomer && o.order_status !== 'PENDING_DELETE' && o.order_status !== 'Cancelled' && (
+                        <button
+                          onClick={() => handleDeleteOrder(o.order_id)}
+                          className="p-1.5 hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 rounded-lg transition"
+                          title="Request Order Deletion"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -403,6 +380,8 @@ const Orders = () => {
             </div>
           </div>
         </div>
+      )}
+
       {/* PLACE ORDER MODAL */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -526,90 +505,6 @@ const Orders = () => {
         </div>
       )}
 
-      {/* REQUEST REFUND MODAL */}
-      {isRefundModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 relative shadow-2xl">
-            <button
-              onClick={() => {
-                setIsRefundModalOpen(false);
-                setErrorMsg('');
-                setSuccessMsg('');
-              }}
-              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"
-            >
-              <X size={18} />
-            </button>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="h-10 w-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
-                <RefreshCw size={18} />
-              </div>
-              <h3 className="font-bold text-slate-100 text-lg">Request Refund</h3>
-            </div>
-
-            {successMsg && (
-              <div className="mb-4 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center gap-2">
-                <Check size={14} />
-                {successMsg}
-              </div>
-            )}
-            {errorMsg && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle size={14} />
-                {errorMsg}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateRefund} className="space-y-4">
-              <div>
-                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Order ID</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. ORD000001"
-                  value={refundOrderId}
-                  onChange={(e) => setRefundOrderId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Refund Reason</label>
-                <textarea
-                  required
-                  rows="3"
-                  placeholder="Provide details on why you are requesting a refund..."
-                  value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 text-xs font-semibold mb-1.5">Refund Amount ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="0.00"
-                  value={refundAmount}
-                  onChange={(e) => setRefundAmount(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-semibold mt-4 transition-all"
-              >
-                {formLoading ? 'Processing...' : 'Submit Refund Claim'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

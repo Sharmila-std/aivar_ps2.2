@@ -55,37 +55,9 @@ class OrderOut(OrderBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-# Refund Schemas
-class RefundBase(BaseModel):
-    customer_id: str
-    order_id: str
-    refund_reason: str
-    refund_amount: Decimal
-    refund_status: str
-
-class RefundCreate(RefundBase):
-    refund_id: str
-
-class RefundUpdate(BaseModel):
-    refund_status: Optional[str] = None
-    refund_reason: Optional[str] = None
-    refund_amount: Optional[Decimal] = None
-
-class RefundOut(RefundBase):
-    refund_id: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
+# Paginated Orders
 class PaginatedOrders(BaseModel):
     items: List[OrderOut]
-    total: int
-    skip: int
-    limit: int
-
-class PaginatedRefunds(BaseModel):
-    items: List[RefundOut]
     total: int
     skip: int
     limit: int

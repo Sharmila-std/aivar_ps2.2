@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 
 from ..models.employee import Employee
 from ..models.customer import Customer
-from ..models.order import Order, Refund
+from ..models.order import Order
 from ..models.session import Session as SessionModel
 from ..models.security import PermissionManifest, AuditLog, SecurityAlert
 from ..services.ai_service import AIService
@@ -19,10 +19,38 @@ class ABACDecision:
 
 class ABACEngine:
     @staticmethod
-    def evaluate(db: Session, session: dict, resource: Any, tool: str, operation: str, manifest_allowed: bool, params: dict) -> ABACDecision:
+    def evaluate(db: Session, session: dict, resource: Any, tool: str, operation: str, manifest_allowed: bool, params: dict, prompt: Optional[str] = None) -> ABACDecision:
         role = session.get("role")
         user_id = session.get("user_id")
         user_region = session.get("region")
+        session_customer_id = session.get("customer_id")
+        
+        # Resolve target customer record for attribute resolution
+        target_customer = None
+        if resource:
+            type_name = type(resource).__name__
+            if type_name == "Customer":
+                target_customer = resource
+            elif type_name in ("Order", "PendingOrder") and getattr(resource, "customer_id", None):
+                target_customer = db.query(Customer).filter(Customer.customer_id == resource.customer_id).first()
+
+        if not target_customer:
+            # Fallback parameters-based customer resolution
+            c_id = params.get("customer_id")
+            if not c_id and "order_details" in params:
+                c_id = params["order_details"].get("customer_id")
+            if c_id and not str(c_id).startswith("{"):
+                target_customer = db.query(Customer).filter(Customer.customer_id == c_id.upper()).first()
+            if not target_customer:
+                o_id = params.get("order_id")
+                if o_id and not str(o_id).startswith("{"):
+                    order = db.query(Order).filter(Order.order_id == o_id.upper()).first()
+                    if not order:
+                        from ..models.order import PendingOrder
+                        order = db.query(PendingOrder).filter(PendingOrder.order_id == o_id.upper()).first()
+                    if order and getattr(order, "customer_id", None):
+                        target_customer = db.query(Customer).filter(Customer.customer_id == order.customer_id).first()
+
 
         # Phase 4: Permission Check
         if not manifest_allowed:
@@ -35,33 +63,6 @@ class ABACEngine:
         # Phase 5: Scope Validation (ABAC)
         if role == "Admin":
             return ABACDecision(decision="ALLOW", reason="Admins have full operational access.", failed_stage="")
-
-        # Resolve target customer record for attribute resolution
-        target_customer = None
-        if tool == "crm.customer" and isinstance(resource, Customer):
-            target_customer = resource
-        elif tool == "crm.order" and isinstance(resource, Order):
-            target_customer = resource.customer
-        elif tool == "crm.refund" and isinstance(resource, Refund):
-            target_customer = resource.customer
-
-        if not target_customer:
-            # Fallback parameters-based customer resolution
-            c_id = params.get("customer_id")
-            if c_id and not str(c_id).startswith("{"):
-                target_customer = db.query(Customer).filter(Customer.customer_id == c_id.upper()).first()
-            if not target_customer:
-                o_id = params.get("order_id")
-                if o_id and not str(o_id).startswith("{"):
-                    order = db.query(Order).filter(Order.order_id == o_id.upper()).first()
-                    if order:
-                        target_customer = order.customer
-            if not target_customer:
-                r_id = params.get("refund_id")
-                if r_id and not str(r_id).startswith("{"):
-                    refund = db.query(Refund).filter(Refund.refund_id == r_id.upper()).first()
-                    if refund:
-                        target_customer = refund.customer
 
         op_lower = operation.lower()
 
@@ -82,12 +83,17 @@ class ABACEngine:
                     if params.get("region"):
                         target_region = params.get("region")
                     elif prompt:
-                        all_regions = ["coimbatore", "bangalore", "hyderabad", "kochin", "kolkata"]
-                        prompt_lower = prompt.lower()
-                        for reg in all_regions:
-                            if reg in prompt_lower:
-                                target_region = reg.capitalize()
-                                break
+                        import re
+                        match = re.search(r'(?i)region\s*[:=\s]\s*([a-zA-Z]+)', prompt)
+                        if match:
+                            target_region = match.group(1).capitalize()
+                        else:
+                            all_regions = ["coimbatore", "bangalore", "hyderabad", "kochin", "kolkata"]
+                            prompt_lower = prompt.lower()
+                            for reg in all_regions:
+                                if reg in prompt_lower:
+                                    target_region = reg.capitalize()
+                                    break
                     
                     if not target_region or target_region.lower() != user_region.lower():
                         return ABACDecision(
@@ -95,7 +101,7 @@ class ABACEngine:
                             reason=f"The region should be {user_region}.",
                             failed_stage="Scope Validation"
                         )
-                if target_customer and target_customer.region != user_region:
+                if target_customer and target_customer.region and target_customer.region.lower() != user_region.lower():
                     return ABACDecision(
                         decision="DENY",
                         reason=f"Manager {user_id} belongs to '{user_region}' Region. Requested customer belongs to '{target_customer.region}' Region.",
@@ -129,19 +135,10 @@ class ABACEngine:
                             reason="Manager is restricted from performing bulk delete operations on orders.",
                             failed_stage="Permission Manifest"
                         )
-                if target_customer and target_customer.region != user_region:
+                if target_customer and target_customer.region and target_customer.region.lower() != user_region.lower():
                     return ABACDecision(
                         decision="DENY",
                         reason=f"Manager {user_id} belongs to '{user_region}' Region. Requested order's customer belongs to '{target_customer.region}' Region.",
-                        failed_stage="Scope Validation"
-                    )
-
-            # Refund Tool Rules
-            elif tool == "crm.refund":
-                if target_customer and target_customer.region != user_region:
-                    return ABACDecision(
-                        decision="DENY",
-                        reason=f"Manager {user_id} belongs to '{user_region}' Region. Requested refund's customer belongs to '{target_customer.region}' Region.",
                         failed_stage="Scope Validation"
                     )
 
@@ -153,7 +150,7 @@ class ABACEngine:
                         reason="Manager role is restricted from modifying employee profiles.",
                         failed_stage="Permission Manifest"
                     )
-                if resource and getattr(resource, "region", None) != user_region:
+                if resource and getattr(resource, "region", None) and getattr(resource, "region").lower() != user_region.lower():
                     return ABACDecision(
                         decision="DENY",
                         reason=f"Manager {user_id} belongs to '{user_region}' Region. Target employee belongs to '{resource.region}' Region.",
@@ -167,13 +164,25 @@ class ABACEngine:
 
             # Customer Tool Rules
             if tool == "crm.customer":
-                if op_lower in ("create", "update", "delete"):
+                if op_lower == "update_request":
+                    param_cust_id = params.get("customer_id")
+                    if param_cust_id and param_cust_id.upper() != session_customer_id.upper():
+                        return ABACDecision(
+                            decision="DENY",
+                            reason=f"Customer can only submit update requests for their own account. Requested customer ID is '{param_cust_id}'.",
+                            failed_stage="Scope Validation"
+                        )
+                elif op_lower in ("create", "update", "delete"):
                     return ABACDecision(
                         decision="DENY",
-                        reason="Customer role is restricted from modifying customer profiles.",
+                        reason="Customer role is restricted from modifying customer profiles directly.",
                         failed_stage="Permission Manifest"
                     )
-                if target_customer and target_customer.customer_id != session_customer_id:
+                if op_lower == "update_request":
+                    # Ownership already verified above — allow the request to proceed
+                    return ABACDecision(decision="ALLOW", reason="Customer is submitting a profile update request for their own account.", failed_stage="")
+                # General ownership check for other operations (read, list, search)
+                if target_customer and target_customer.customer_id.upper() != (session_customer_id or "").upper():
                     return ABACDecision(
                         decision="DENY",
                         reason=f"Customer can only access their own record. Requested customer ID is '{target_customer.customer_id}'.",
@@ -182,56 +191,40 @@ class ABACEngine:
 
             # Order Tool Rules
             elif tool == "crm.order":
-                if op_lower in ("update", "delete"):
+                if op_lower in ("update",):
                     return ABACDecision(
                         decision="DENY",
-                        reason="Customer role is restricted from modifying or deleting orders directly.",
+                        reason="Customer role is restricted from modifying orders directly.",
                         failed_stage="Permission Manifest"
                     )
-                if op_lower == "create":
+                if op_lower in ("create", "create_request"):
                     param_cust_id = params.get("customer_id")
+                    if not param_cust_id and "order_details" in params:
+                        param_cust_id = params["order_details"].get("customer_id")
                     if param_cust_id and param_cust_id.upper() != session_customer_id.upper():
                         return ABACDecision(
                             decision="DENY",
                             reason=f"Customer can only place orders for themselves. Requested customer ID is '{param_cust_id}'.",
                             failed_stage="Scope Validation"
                         )
-                if target_customer and target_customer.customer_id != session_customer_id:
-                    return ABACDecision(
-                        decision="DENY",
-                        reason=f"Customer can only access their own orders. Requested order belongs to customer ID '{target_customer.customer_id}'.",
-                        failed_stage="Scope Validation"
-                    )
-
-            # Refund Tool Rules
-            elif tool == "crm.refund":
-                if op_lower in ("update", "delete", "approve", "reject"):
-                    return ABACDecision(
-                        decision="DENY",
-                        reason="Customer role is restricted from approving or updating refunds.",
-                        failed_stage="Permission Manifest"
-                    )
-                if op_lower == "create":
-                    param_cust_id = params.get("customer_id")
-                    if param_cust_id and param_cust_id.upper() != session_customer_id.upper():
-                        return ABACDecision(
-                            decision="DENY",
-                            reason=f"Customer can only submit refund requests for themselves. Requested customer ID is '{param_cust_id}'.",
-                            failed_stage="Scope Validation"
-                        )
+                if op_lower == "delete":
                     order_id = params.get("order_id")
                     if order_id:
                         order = db.query(Order).filter(Order.order_id == order_id.upper()).first()
-                        if not order or order.customer_id.upper() != session_customer_id.upper():
-                            return ABACDecision(
-                                decision="DENY",
-                                reason="Customer can only submit refund requests for their own orders.",
-                                failed_stage="Scope Validation"
-                            )
-                if target_customer and target_customer.customer_id != session_customer_id:
+                        if not order:
+                            from ..models.order import PendingOrder
+                            order = db.query(PendingOrder).filter(PendingOrder.order_id == order_id.upper()).first()
+                        if order:
+                            if order.customer_id.upper() != session_customer_id.upper():
+                                return ABACDecision(
+                                    decision="DENY",
+                                    reason=f"Customer can only delete/cancel their own orders. Order {order_id} belongs to '{order.customer_id}'.",
+                                    failed_stage="Scope Validation"
+                                )
+                if target_customer and target_customer.customer_id.upper() != (session_customer_id or "").upper():
                     return ABACDecision(
                         decision="DENY",
-                        reason=f"Customer can only access their own refunds. Requested refund belongs to customer ID '{target_customer.customer_id}'.",
+                        reason=f"Customer can only access their own orders. Requested order belongs to customer ID '{target_customer.customer_id}'.",
                         failed_stage="Scope Validation"
                     )
 
@@ -308,11 +301,11 @@ class SecurityGateway:
             elif tool == "crm.order":
                 o_id = parameters.get("order_id")
                 if o_id:
-                    return db.query(Order).filter(Order.order_id == o_id.upper()).first()
-            elif tool == "crm.refund":
-                r_id = parameters.get("refund_id")
-                if r_id:
-                    return db.query(Refund).filter(Refund.refund_id == r_id.upper()).first()
+                    o = db.query(Order).filter(Order.order_id == o_id.upper()).first()
+                    if not o:
+                        from ..models.order import PendingOrder
+                        o = db.query(PendingOrder).filter(PendingOrder.order_id == o_id.upper()).first()
+                    return o
             elif tool == "crm.employee":
                 e_id = parameters.get("employee_id")
                 if e_id:
@@ -351,7 +344,9 @@ class SecurityGateway:
             # Parse individual tool/operation details
             tool = call.get("tool")
             operation = call.get("operation")
-            params = call.get("parameters", {})
+            params = call.get("parameters") or {}
+            if not params:
+                params = {k: v for k, v in call.items() if k not in ("tool", "operation", "parameters")}
             
             # If manager list/search query, check if they are querying other regions
             if session_context["role"] == "Manager" and tool == "crm.customer" and operation in ("list", "search"):
@@ -533,11 +528,6 @@ class SecurityGateway:
                         manifest_tool_name = "delete_customer"
                 elif res_name == "order":
                     manifest_tool_name = "read_orders"
-                elif res_name == "refund":
-                    if operation in ("read", "list"):
-                        manifest_tool_name = "read_refunds"
-                    elif operation in ("approve", "reject", "update"):
-                        manifest_tool_name = "update_refund_status"
                 elif res_name == "employee":
                     manifest_tool_name = "read_employee"
 
@@ -555,7 +545,9 @@ class SecurityGateway:
                 is_override = False
                 if session_context["role"] == "Manager" and tool == "crm.customer" and operation in ("create", "delete"):
                     is_override = True
-                elif session_context["role"] == "Customer" and tool in ("crm.order", "crm.refund") and operation in ("create", "read", "list", "search"):
+                elif session_context["role"] == "Customer" and tool == "crm.customer" and operation in ("read", "update_request"):
+                    is_override = True
+                elif session_context["role"] == "Customer" and tool == "crm.order" and operation in ("create", "create_request", "read", "list", "search", "delete"):
                     is_override = True
 
                 if is_override:
@@ -602,7 +594,7 @@ class SecurityGateway:
 
             # Step 3: Evaluate ABAC Rules
             abac_start = time.perf_counter()
-            decision_obj = ABACEngine.evaluate(db, session_context, resource, tool, operation, manifest_allowed, params)
+            decision_obj = ABACEngine.evaluate(db, session_context, resource, tool, operation, manifest_allowed, params, prompt=prompt)
             pipeline_metrics["abac"]["latency_ms"] = (time.perf_counter() - abac_start) * 1000.0
             
             if decision_obj.decision == "DENY":
@@ -747,33 +739,37 @@ class SecurityGateway:
         user_id = sess.get("user_id")
         
         # Check if this block should be treated as an attack (incrementing violation counters and alert generation)
-        # "for deletion alone have the atack check"
         is_attack = True
-        if role == "Manager" and op != "delete":
-            is_attack = False
 
         v_count = 0
         sess_record = None
         if sess_id:
             sess_record = db.query(SessionModel).filter(SessionModel.session_id == sess_id).first()
             if sess_record:
-                v_count = sess_record.violation_count or 0
-
-        if is_attack:
-            v_count += 1
-            if sess_record:
-                sess_record.violation_count = v_count
+                sess_record.violation_count = (sess_record.violation_count or 0) + 1
+                v_count = sess_record.violation_count
                 db.commit()
 
         # Map threat level
-        if v_count == 1:
-            threat_level = "Warning"
-        elif v_count == 2:
-            threat_level = "High Risk"
-        elif v_count >= 3:
-            threat_level = "Critical"
+        # Map threat level
+        if role == "Manager":
+            if v_count >= 6:
+                threat_level = "Critical"
+            elif v_count >= 4:
+                threat_level = "High Risk"
+            elif v_count >= 1:
+                threat_level = "Warning"
+            else:
+                threat_level = "Safe"
         else:
-            threat_level = "Safe"
+            if v_count >= 3:
+                threat_level = "Critical"
+            elif v_count == 2:
+                threat_level = "High Risk"
+            elif v_count == 1:
+                threat_level = "Warning"
+            else:
+                threat_level = "Safe"
 
         # Update node status in pipeline metrics for the visual graph
         # Map success/block states
@@ -839,12 +835,16 @@ class SecurityGateway:
             elif stage == "Scope Validation":
                 alert_type = "Data Scope/Ownership Intrusion"
 
+            limit = 6 if role == "Manager" else 3
+            is_critical = v_count >= limit
+            is_high = v_count >= (limit - 2) if role == "Manager" else v_count == 2
+            
             alert = SecurityAlert(
                 session_id=sess_id,
                 user_id=user_id,
                 alert_type=alert_type,
-                severity="Critical" if v_count >= 3 else ("High" if v_count == 2 else "Medium"),
-                risk_score=95 if v_count >= 3 else (60 if v_count == 2 else 30),
+                severity="Critical" if is_critical else ("High" if is_high else "Medium"),
+                risk_score=95 if is_critical else (60 if is_high else 30),
                 reason=reason,
                 decision_trace=decision_trace_str,
                 status="Pending Investigation",
@@ -867,7 +867,7 @@ class SecurityGateway:
                 resource="security_alerts",
                 decision="Allowed",
                 reason=f"Security alert {alert_id} created for user {user_id} due to {stage} block.",
-                risk_score=95 if v_count >= 3 else 30,
+                risk_score=95 if is_critical else 30,
                 status="success",
                 original_prompt=prompt,
                 generated_tool=json.dumps(tool_call) if tool_call else None,
@@ -885,7 +885,7 @@ class SecurityGateway:
                 resource="threat_meter",
                 decision="Allowed",
                 reason=f"Threat meter updated. Violation count: {v_count}. Threat Level: {threat_level}.",
-                risk_score=5 if v_count < 3 else 90,
+                risk_score=5 if not is_critical else 90,
                 status="success",
                 original_prompt=prompt,
                 generated_tool=json.dumps(tool_call) if tool_call else None,
@@ -894,8 +894,9 @@ class SecurityGateway:
             ))
             db.commit()
 
-            # Handle Critical Threshold (>= 3 violations) -> Invalidate session & lock account
-            if v_count >= 3:
+            # Handle Critical Threshold (>= 6 violations for Manager, >= 3 for others) -> Invalidate session & lock account
+            limit = 6 if role == "Manager" else 3
+            if v_count >= limit:
                 session_terminated = True
                 
                 # Terminate Session
@@ -1067,7 +1068,7 @@ Keep the analysis professional, concise, and structured. Return ONLY the markdow
     def _suggest_closest_customer(self, db: Session, target_name: str, region: Optional[str] = None) -> Optional[str]:
         query = db.query(Customer)
         if region:
-            query = query.filter(Customer.region == region)
+            query = query.filter(Customer.region.ilike(region))
         customers = query.all()
         
         closest_name = None
@@ -1082,3 +1083,102 @@ Keep the analysis professional, concise, and structured. Return ONLY the markdow
                 closest_name = c.full_name
                 
         return closest_name
+
+def enforce_regional_boundary_rest(db: Session, current_employee: Any, customer_region: str, action: str, resource_id: str):
+    role_name = getattr(current_employee, "role", "Customer")
+    if role_name == "Admin" or role_name == "Customer":
+        return
+        
+    manager_region = getattr(current_employee, "region", None)
+    if not manager_region or not customer_region or manager_region.lower() != customer_region.lower():
+        session_id = getattr(current_employee, "session_id", None)
+        user_id = getattr(current_employee, "employee_id", None)
+        v_count = 0
+        sess_record = None
+        if session_id:
+            from ..models.session import Session as SessionModel
+            sess_record = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+            if sess_record:
+                sess_record.violation_count = (sess_record.violation_count or 0) + 1
+                v_count = sess_record.violation_count
+                db.commit()
+                
+        # Scale threat level
+        if v_count >= 6:
+            threat_level = "Critical"
+        elif v_count >= 4:
+            threat_level = "High Risk"
+        elif v_count >= 1:
+            threat_level = "Warning"
+        else:
+            threat_level = "Safe"
+
+        from ..models.security import AuditLog, SecurityAlert
+        reason_msg = f"Manager {user_id} belongs to '{manager_region}' Region. Requested target belongs to '{customer_region}' Region."
+        db.add(AuditLog(
+            user_id=user_id,
+            session_id=session_id,
+            tool_name="rest_api",
+            operation=action,
+            resource="customers",
+            decision="Blocked",
+            reason=reason_msg,
+            risk_score=60 if v_count < 6 else 95,
+            status="failure"
+        ))
+        db.commit()
+        
+        alert = SecurityAlert(
+            session_id=session_id,
+            user_id=user_id,
+            alert_type="Data Scope/Ownership Intrusion",
+            severity="Critical" if v_count >= 6 else ("High" if v_count >= 4 else "Medium"),
+            risk_score=95 if v_count >= 6 else (60 if v_count >= 4 else 30),
+            reason=reason_msg,
+            status="Pending Investigation",
+            threat_level=threat_level,
+            violation_count=v_count,
+            triggered_rule="Scope Validation",
+            user_role="Manager",
+            investigation_notes="REST API Regional Security Violation."
+        )
+        db.add(alert)
+        db.commit()
+        
+        if v_count >= 6:
+            if sess_record:
+                sess_record.session_status = "Terminated"
+                from datetime import datetime
+                sess_record.logout_time = datetime.utcnow()
+                db.commit()
+            
+            # Suspend user (Manager/Employee)
+            from ..models.employee import Employee
+            emp = db.query(Employee).filter(Employee.employee_id == user_id).first()
+            if emp:
+                emp.status = "Suspended"
+                db.commit()
+            
+            db.add(AuditLog(
+                user_id=user_id,
+                session_id=session_id,
+                tool_name="session_termination",
+                operation="TERMINATE",
+                resource="sessions",
+                decision="Allowed",
+                reason=f"Session {session_id} automatically terminated due to critical threat.",
+                risk_score=90,
+                status="success",
+                security_alert_id=alert.alert_id
+            ))
+            db.commit()
+            
+            raise HTTPException(
+                status_code=403,
+                detail="Your account has been temporarily suspended due to repeated unauthorized access attempts. Please contact your administrator."
+            )
+            
+        raise HTTPException(
+            status_code=403,
+            detail=reason_msg
+        )

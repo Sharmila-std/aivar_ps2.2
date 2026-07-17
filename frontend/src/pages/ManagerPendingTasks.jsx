@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, 
   Trash2, 
-  RefreshCw, 
+  User,
   Check, 
   X, 
   Eye, 
@@ -16,7 +16,7 @@ const ManagerPendingTasks = () => {
   const [activeTab, setActiveTab] = useState('creation');
   const [orderCreations, setOrderCreations] = useState([]);
   const [orderDeletions, setOrderDeletions] = useState([]);
-  const [refundRequests, setRefundRequests] = useState([]);
+  const [profileUpdates, setProfileUpdates] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -39,11 +39,9 @@ const ManagerPendingTasks = () => {
           params: { status: 'PENDING_DELETE', limit: 100 }
         });
         setOrderDeletions(res.data.items || []);
-      } else {
-        const res = await api.get('/api/refunds', {
-          params: { status: 'Requested', limit: 100 }
-        });
-        setRefundRequests(res.data.items || []);
+      } else if (activeTab === 'profile_updates') {
+        const res = await api.get('/api/customers/pending-updates');
+        setProfileUpdates(res.data || []);
       }
     } catch (err) {
       console.error('Error fetching manager pending tasks', err);
@@ -60,7 +58,7 @@ const ManagerPendingTasks = () => {
   const handleProcessOrder = async (orderId, action) => {
     try {
       await api.put(`/api/orders/pending/${orderId}`, { action });
-      setSuccess(`Order creation request was ${action.toLowerCase()} successfully.`);
+      setSuccess(`Order creation request was ${action.toLowerCase()}d successfully.`);
       setSelectedTask(null);
       fetchTasks();
       setTimeout(() => setSuccess(''), 5000);
@@ -73,28 +71,49 @@ const ManagerPendingTasks = () => {
   const handleProcessOrderDelete = async (orderId, action) => {
     try {
       await api.put(`/api/orders/pending/${orderId}`, { action });
-      setSuccess(`Order deletion request was ${action.toLowerCase()} successfully.`);
+      setSuccess(`Order cancellation request was ${action.toLowerCase()}d successfully.`);
       setSelectedTask(null);
       fetchTasks();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       console.error(err);
-      setError(`Failed to ${action.toLowerCase()} the order deletion request.`);
+      setError(`Failed to ${action.toLowerCase()} the order cancellation request.`);
     }
   };
 
-  const handleProcessRefund = async (refundId, newStatus) => {
+  const handleProcessProfileUpdate = async (requestId, action) => {
     try {
-      await api.put(`/api/refunds/${refundId}`, { refund_status: newStatus });
-      setSuccess(`Refund request was ${newStatus.toLowerCase()} successfully.`);
+      await api.put(`/api/customers/pending-updates/${requestId}`, { action });
+      setSuccess(`Profile update request was ${action.toLowerCase()}d successfully.`);
       setSelectedTask(null);
       fetchTasks();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       console.error(err);
-      setError(`Failed to set refund request to ${newStatus.toLowerCase()}.`);
+      setError(`Failed to ${action.toLowerCase()} the profile update request.`);
     }
   };
+
+  const getTaskUpdates = (task) => {
+    if (!task) return {};
+    if (task.updates && Object.keys(task.updates).length > 0) {
+      return task.updates;
+    }
+    if (task.updates_json) {
+      try {
+        return JSON.parse(task.updates_json);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return {};
+  };
+
+  const tabs = [
+    { key: 'creation', label: 'Order Creations', icon: ShoppingBag },
+    { key: 'deletion', label: 'Order Cancellations', icon: Trash2 },
+    { key: 'profile_updates', label: 'Profile Update Requests', icon: User },
+  ];
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950 p-8">
@@ -104,7 +123,7 @@ const ManagerPendingTasks = () => {
           Manager Pending Tasks
         </h1>
         <p className="text-slate-400 text-sm mt-1">
-          Approve or reject customer order placements, deletions, or refund requests within your region.
+          Approve or reject customer order placements, cancellations, or profile update requests within your region.
         </p>
       </div>
 
@@ -124,39 +143,20 @@ const ManagerPendingTasks = () => {
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-800 mb-6">
-        <button
-          onClick={() => setActiveTab('creation')}
-          className={`px-4 py-2 text-sm font-medium transition-all duration-200 border-b-2 -mb-[2px] flex items-center gap-2 ${
-            activeTab === 'creation'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <ShoppingBag size={16} />
-          Order Creations
-        </button>
-        <button
-          onClick={() => setActiveTab('deletion')}
-          className={`px-4 py-2 text-sm font-medium transition-all duration-200 border-b-2 -mb-[2px] flex items-center gap-2 ${
-            activeTab === 'deletion'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Trash2 size={16} />
-          Order Deletions
-        </button>
-        <button
-          onClick={() => setActiveTab('refunds')}
-          className={`px-4 py-2 text-sm font-medium transition-all duration-200 border-b-2 -mb-[2px] flex items-center gap-2 ${
-            activeTab === 'refunds'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <RefreshCw size={16} />
-          Refund Requests
-        </button>
+        {tabs.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2 text-sm font-medium transition-all duration-200 border-b-2 -mb-[2px] flex items-center gap-2 ${
+              activeTab === key
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Content Area */}
@@ -165,7 +165,7 @@ const ManagerPendingTasks = () => {
           <div className="h-8 w-8 rounded-full border-2 border-t-indigo-500 border-slate-800 animate-spin"></div>
         </div>
       ) : activeTab === 'creation' ? (
-        // Creations
+        // Order Creations
         orderCreations.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500">
             No pending order creation requests in your region.
@@ -226,10 +226,10 @@ const ManagerPendingTasks = () => {
           </div>
         )
       ) : activeTab === 'deletion' ? (
-        // Deletions
+        // Order Cancellations
         orderDeletions.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500">
-            No pending order deletion requests in your region.
+            No pending order cancellation requests in your region.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -242,7 +242,7 @@ const ManagerPendingTasks = () => {
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-[10px] font-bold tracking-wider text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full uppercase flex items-center gap-1.5">
                       <Trash2 size={10} />
-                      Order Cancel request
+                      Cancellation Request
                     </span>
                     <span className="text-xs text-slate-400 font-mono bg-slate-950/60 px-2 py-0.5 rounded">
                       {task.order_id}
@@ -270,14 +270,14 @@ const ManagerPendingTasks = () => {
                   <button
                     onClick={() => handleProcessOrderDelete(task.order_id, 'APPROVE')}
                     className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl flex items-center justify-center transition-all"
-                    title="Confirm Cancel"
+                    title="Confirm Cancellation"
                   >
                     <Check size={14} />
                   </button>
                   <button
                     onClick={() => handleProcessOrderDelete(task.order_id, 'REJECT')}
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center justify-center transition-all"
-                    title="Reject Cancel"
+                    title="Reject Cancellation"
                   >
                     <X size={14} />
                   </button>
@@ -287,58 +287,61 @@ const ManagerPendingTasks = () => {
           </div>
         )
       ) : (
-        // Refunds
-        refundRequests.length === 0 ? (
+        // Profile Update Requests
+        profileUpdates.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500">
-            No pending refund requests in your region.
+            No pending profile update requests in your region.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {refundRequests.map((task) => (
+            {profileUpdates.map((task) => (
               <div 
-                key={task.refund_id}
+                key={task.request_id || task.id}
                 className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between hover:border-slate-700 transition-all duration-300 group"
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-[10px] font-bold tracking-wider text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full uppercase flex items-center gap-1.5">
-                      <RefreshCw size={10} className="animate-spin" />
-                      Refund Pending
+                    <span className="text-[10px] font-bold tracking-wider text-violet-400 bg-violet-500/10 px-2.5 py-1 rounded-full uppercase flex items-center gap-1.5">
+                      <User size={10} />
+                      Profile Update
                     </span>
                     <span className="text-xs text-slate-400 font-mono bg-slate-950/60 px-2 py-0.5 rounded">
-                      {task.refund_id}
+                      {task.customer_id}
                     </span>
                   </div>
-                  <h3 className="font-semibold text-slate-200 group-hover:text-slate-100 transition-colors">
-                    Order ID: {task.order_id}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">Reason: {task.refund_reason}</p>
-                  
-                  <div className="flex items-center justify-between mt-4">
-                    <p className="text-xs text-slate-500">Client ID: {task.customer_id}</p>
-                    <p className="text-sm font-bold text-amber-400">${task.refund_amount}</p>
+                  <div className="space-y-2 mt-2">
+                    {Object.entries(getTaskUpdates(task)).map(([field, value]) => (
+                      <div key={field} className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500 uppercase tracking-wider font-semibold min-w-[80px]">{field}:</span>
+                        <span className="text-slate-300 font-medium truncate">{String(value)}</span>
+                      </div>
+                    ))}
                   </div>
+                  <p className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                    <Clock size={10} />
+                    Requested: {task.created_at ? new Date(task.created_at).toLocaleDateString() : 'N/A'}
+                  </p>
                 </div>
 
                 <div className="flex gap-2 mt-6">
                   <button
-                    onClick={() => { setSelectedTask(task); setTaskType('refund'); }}
+                    onClick={() => { setSelectedTask(task); setTaskType('profile_update'); }}
                     className="flex-1 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs rounded-xl flex items-center justify-center gap-2 transition-all font-medium"
                   >
                     <Eye size={14} />
                     View Details
                   </button>
                   <button
-                    onClick={() => handleProcessRefund(task.refund_id, 'Approved')}
+                    onClick={() => handleProcessProfileUpdate(task.request_id || task.id, 'APPROVE')}
                     className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl flex items-center justify-center transition-all"
-                    title="Approve Refund"
+                    title="Approve Profile Update"
                   >
                     <Check size={14} />
                   </button>
                   <button
-                    onClick={() => handleProcessRefund(task.refund_id, 'Rejected')}
+                    onClick={() => handleProcessProfileUpdate(task.request_id || task.id, 'REJECT')}
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center justify-center transition-all"
-                    title="Reject Refund"
+                    title="Reject Profile Update"
                   >
                     <X size={14} />
                   </button>
@@ -367,27 +370,36 @@ const ManagerPendingTasks = () => {
             </div>
             
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              {taskType === 'refund' ? (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Refund ID</p>
-                    <p className="text-sm font-mono text-indigo-300">{selectedTask.refund_id}</p>
+              {taskType === 'profile_update' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Request ID</p>
+                      <p className="text-sm font-mono text-indigo-300">#{selectedTask.request_id || selectedTask.id}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
+                      <p className="text-sm font-mono text-slate-300">{selectedTask.customer_id}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Status</p>
+                      <p className="text-sm font-medium text-amber-400">{selectedTask.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Submitted</p>
+                      <p className="text-sm text-slate-400">{selectedTask.created_at ? new Date(selectedTask.created_at).toLocaleDateString() : 'N/A'}</p>
+                    </div>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Refund Amount</p>
-                    <p className="text-sm font-bold text-amber-400">${selectedTask.refund_amount}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Order ID</p>
-                    <p className="text-sm font-mono text-slate-350">{selectedTask.order_id}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Customer ID</p>
-                    <p className="text-sm font-mono text-slate-350">{selectedTask.customer_id}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Reason</p>
-                    <p className="text-sm font-medium text-slate-300">{selectedTask.refund_reason}</p>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-3">Requested Changes</p>
+                    <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 space-y-3">
+                      {Object.entries(getTaskUpdates(selectedTask)).map(([field, value]) => (
+                        <div key={field} className="flex items-start gap-3">
+                          <span className="text-xs text-slate-500 uppercase tracking-wider font-bold min-w-[100px] pt-0.5">{field}</span>
+                          <span className="text-sm text-violet-300 font-medium break-all">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -427,19 +439,19 @@ const ManagerPendingTasks = () => {
               >
                 Close
               </button>
-              {taskType === 'refund' ? (
+              {taskType === 'profile_update' ? (
                 <>
                   <button 
-                    onClick={() => handleProcessRefund(selectedTask.refund_id, 'Rejected')}
+                    onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'REJECT')}
                     className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
                   >
-                    Reject Refund
+                    Reject Update
                   </button>
                   <button 
-                    onClick={() => handleProcessRefund(selectedTask.refund_id, 'Approved')}
+                    onClick={() => handleProcessProfileUpdate(selectedTask.request_id || selectedTask.id, 'APPROVE')}
                     className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors"
                   >
-                    Approve Refund
+                    Approve Update
                   </button>
                 </>
               ) : taskType === 'creation' ? (
@@ -463,13 +475,13 @@ const ManagerPendingTasks = () => {
                     onClick={() => handleProcessOrderDelete(selectedTask.order_id, 'REJECT')}
                     className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
                   >
-                    Reject Deletion
+                    Reject Cancellation
                   </button>
                   <button 
                     onClick={() => handleProcessOrderDelete(selectedTask.order_id, 'APPROVE')}
                     className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors"
                   >
-                    Approve Deletion
+                    Approve Cancellation
                   </button>
                 </>
               )}

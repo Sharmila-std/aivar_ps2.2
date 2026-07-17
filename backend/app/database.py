@@ -366,6 +366,8 @@ def parse_sqlalchemy_expression(expr, session, joins=None):
             return {left_key: {"$lt": value}}
         elif operator in ("less_than_or_equal_op", "le", "<="):
             return {left_key: {"$lte": value}}
+        elif operator in ("in_op", "in"):
+            return {left_key: {"$in": list(value)}}
         elif "like" in operator.lower():
             val_str = str(value)
             regex_str = "^" + val_str.replace("%", ".*") + "$"

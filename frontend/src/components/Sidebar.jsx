@@ -54,7 +54,6 @@ const Sidebar = () => {
       { name: 'AI Workspace', path: '/ai-workspace', icon: Bot },
       { name: 'My Profile', path: '/customers', icon: Users },
       { name: 'My Orders', path: '/orders', icon: ShoppingBag },
-      { name: 'My Refunds', path: '/refunds', icon: RefreshCw },
       { name: 'Settings', path: '/settings', icon: Settings },
     ];
   } else if (role === 'Manager') {
@@ -63,7 +62,6 @@ const Sidebar = () => {
       { name: 'AI Workspace', path: '/ai-workspace', icon: Bot },
       { name: 'Customers', path: '/customers', icon: Users },
       { name: 'Orders', path: '/orders', icon: ShoppingBag },
-      { name: 'Refunds', path: '/refunds', icon: RefreshCw },
       { name: 'Pending Tasks', path: '/pending-tasks', icon: ClipboardList },
       { name: 'Settings', path: '/settings', icon: Settings },
     ];
@@ -74,7 +72,6 @@ const Sidebar = () => {
       { name: 'AI Workspace', path: '/ai-workspace', icon: Bot },
       { name: 'Customers', path: '/customers', icon: Users },
       { name: 'Orders', path: '/orders', icon: ShoppingBag },
-      { name: 'Refunds', path: '/refunds', icon: RefreshCw },
       { name: 'Employees', path: '/employees', icon: UserCheck },
       { name: 'Pending Tasks', path: '/pending-tasks', icon: ClipboardList },
       { name: 'Security & Roles', path: '/roles', icon: ShieldAlert },

@@ -142,15 +142,43 @@ class EmployeeService:
         if self.repo.get_by_email(db, employee_in.email):
             raise HTTPException(status_code=400, detail="Email already registered")
 
+        # Get role name from Role db model if not explicitly provided
+        role_name_val = employee_in.role
+        if not role_name_val:
+            role_obj = db.query(Role).filter(Role.role_id == employee_in.role_id).first()
+            if role_obj:
+                role_name_val = role_obj.role_name
+
         db_employee = Employee(
             employee_id=employee_in.employee_id,
             full_name=employee_in.full_name,
             email=employee_in.email,
             password_hash=hash_password(employee_in.password),
-            role_id=employee_in.role_id
+            role_id=employee_in.role_id,
+            region=employee_in.region,
+            role=role_name_val
         )
 
         created = self.repo.create(db, db_employee)
+
+        # Send password to email
+        try:
+            from ..utils.email import send_email
+            subject = "Welcome to SecureScope AI Portal - Corporate Account Details"
+            body = (
+                f"Hello {created.full_name},\n\n"
+                f"Your Corporate employee account has been successfully created by the administrator.\n\n"
+                f"Login Details:\n"
+                f"Username / Employee ID: {created.employee_id}\n"
+                f"Password: {employee_in.password}\n"
+                f"Assigned Role: {role_name_val}\n"
+                f"Assigned Region: {created.region or 'Global'}\n\n"
+                f"Please use these details to log in to the administrative portal.\n\n"
+                f"Thank you,\nSecureScope AI Admin Team"
+            )
+            send_email(created.email, subject, body)
+        except Exception as e:
+            print(f"Failed to send email to employee: {e}")
 
         # Log system audit log
         db.add(AuditLog(

@@ -2,9 +2,9 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import List, Tuple, Optional
 from ..repositories.customer_repository import CustomerRepository
-from ..models.customer import Customer, PendingCustomer, CustomerActivity
+from ..models.customer import Customer, PendingCustomer, CustomerActivity, PendingCustomerUpdate
 from ..models.security import AuditLog
-from ..schemas.customer import CustomerCreate, CustomerUpdate, PendingCustomerUpdate
+from ..schemas.customer import CustomerCreate, CustomerUpdate, CustomerProfileUpdateRequestCreate
 from ..utils.auth import hash_password
 
 class CustomerService:
@@ -37,7 +37,7 @@ class CustomerService:
         if operator_id:
             operator = db.query(Employee).filter(Employee.employee_id == operator_id).first()
 
-        if operator and operator.role == "manager":
+        if operator and operator.role and operator.role.lower() == "manager":
             # Enforce region boundary
             if not customer_in.region or customer_in.region.lower() != operator.region.lower():
                 raise HTTPException(status_code=400, detail=f"The region should be {operator.region}.")
@@ -126,6 +126,23 @@ class CustomerService:
         )
         
         created = self.repo.create(db, db_customer)
+
+        # Send password to email
+        try:
+            from ..utils.email import send_email
+            subject = "Welcome to SecureScope AI Portal - Account Details"
+            body = (
+                f"Hello {created.full_name},\n\n"
+                f"Your Customer account has been successfully created by the administrator.\n\n"
+                f"Login Details:\n"
+                f"Username / Customer ID: {created.customer_id}\n"
+                f"Password: {customer_in.password}\n"
+                f"Assigned Region: {created.region or 'Global'}\n\n"
+                f"Thank you,\nSecureScope AI Admin Team"
+            )
+            send_email(created.email, subject, body)
+        except Exception as e:
+            print(f"Failed to send email to customer: {e}")
         
         # Log customer activity
         self.repo.log_activity(
@@ -198,7 +215,7 @@ class CustomerService:
         if operator_id:
             operator = db.query(Employee).filter(Employee.employee_id == operator_id).first()
 
-        if operator and operator.role == "manager":
+        if operator and operator.role and operator.role.lower() == "manager":
             db_customer.status = "PENDING_DELETE"
             # Log system audit log
             db.add(AuditLog(
@@ -252,10 +269,10 @@ class CustomerService:
             else:
                 new_id = "CUS000001"
                 
-            import secrets
+            import random
             import string
             alphabet = string.ascii_letters + string.digits
-            temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
+            temp_password = ''.join(random.choice(alphabet) for _ in range(10))
             
             cust_in = CustomerCreate(
                 customer_id=new_id,
@@ -313,3 +330,102 @@ SecureScope Security Gateway Team
         ))
         db.commit()
         return updated
+
+    # Customer Profile Update Requests
+    def create_update_request(self, db: Session, customer_id: str, updates: dict) -> PendingCustomerUpdate:
+        cust = self.repo.get_by_id(db, customer_id)
+        if not cust:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        
+        # Normalize updates if they contain nested dicts with "new_value" key
+        normalized_updates = {}
+        for k, v in updates.items():
+            if isinstance(v, dict) and "new_value" in v:
+                normalized_updates[k] = v["new_value"]
+            else:
+                normalized_updates[k] = v
+
+        import json
+        db_req = PendingCustomerUpdate(
+            customer_id=customer_id,
+            updates_json=json.dumps(normalized_updates),
+            request_status="Pending"
+        )
+        created = self.repo.create_pending_update(db, db_req)
+        
+        db.add(AuditLog(
+            user_id=customer_id,
+            tool_name="profile_update_request",
+            operation="CREATE",
+            resource="pending_customer_updates",
+            decision="Allowed",
+            reason=f"Customer {customer_id} submitted a profile update request.",
+            risk_score=0,
+            status="success"
+        ))
+        db.commit()
+        return created
+
+    def get_pending_updates(self, db: Session, skip: int = 0, limit: int = 100, region: Optional[str] = None) -> List[PendingCustomerUpdate]:
+        return self.repo.get_pending_updates_all(db, skip, limit, region=region)
+
+    def process_update_request(self, db: Session, request_id: int, action: str, operator_id: str, operator_role: str, operator_region: Optional[str] = None) -> PendingCustomerUpdate:
+        req = self.repo.get_pending_update_by_id(db, request_id)
+        if not req:
+            raise HTTPException(status_code=404, detail="Profile update request not found")
+            
+        cust = self.repo.get_by_id(db, req.customer_id)
+        if not cust:
+            raise HTTPException(status_code=404, detail="Customer associated with request not found")
+
+        # Regional manager check
+        if operator_role.lower() == "manager":
+            if not operator_region or (cust.region and cust.region.lower() != operator_region.lower()):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Only managers assigned to the {cust.region} region can process this update request."
+                )
+
+        if action.upper() == "APPROVE":
+            req.request_status = "Approved"
+            
+            import json
+            updates = json.loads(req.updates_json)
+            for k, v in updates.items():
+                if k == "password":
+                    setattr(cust, "password_hash", hash_password(v))
+                elif hasattr(cust, k):
+                    setattr(cust, k, v)
+                    
+            db.commit()
+
+            db.add(AuditLog(
+                user_id=operator_id,
+                tool_name="approve_profile_update",
+                operation="UPDATE",
+                resource="customers",
+                decision="Allowed",
+                reason=f"Profile update request {request_id} for customer {req.customer_id} approved by manager {operator_id}.",
+                risk_score=0,
+                status="success"
+            ))
+            db.commit()
+        elif action.upper() == "REJECT":
+            req.request_status = "Rejected"
+            db.commit()
+
+            db.add(AuditLog(
+                user_id=operator_id,
+                tool_name="reject_profile_update",
+                operation="UPDATE",
+                resource="customers",
+                decision="Allowed",
+                reason=f"Profile update request {request_id} for customer {req.customer_id} rejected by manager {operator_id}.",
+                risk_score=0,
+                status="success"
+            ))
+            db.commit()
+        else:
+            raise HTTPException(status_code=400, detail="Invalid action. Must be APPROVE or REJECT.")
+
+        return req

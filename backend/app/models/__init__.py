@@ -1,8 +1,8 @@
 from ..database import Base
 from .role import Role
 from .employee import Employee
-from .customer import Customer, PendingCustomer, CustomerActivity
-from .order import Order, OrderItem, Refund
+from .customer import Customer, PendingCustomer, CustomerActivity, PendingCustomerUpdate
+from .order import Order, OrderItem, PendingOrder
 from .security import PermissionManifest, AuditLog, BlockedSession, SecurityAlert, UserWarning
 from .session import Session
 
@@ -13,9 +13,10 @@ __all__ = [
     "Customer",
     "PendingCustomer",
     "CustomerActivity",
+    "PendingCustomerUpdate",
     "Order",
     "OrderItem",
-    "Refund",
+    "PendingOrder",
     "PermissionManifest",
     "AuditLog",
     "BlockedSession",

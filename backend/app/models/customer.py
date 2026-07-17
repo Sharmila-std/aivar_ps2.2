@@ -23,7 +23,6 @@ class Customer(Base):
 
     # Relationships
     orders = relationship("Order", back_populates="customer", cascade="all, delete-orphan")
-    refunds = relationship("Refund", back_populates="customer", cascade="all, delete-orphan")
     activities = relationship("CustomerActivity", back_populates="customer", cascade="all, delete-orphan")
 
     @property
@@ -53,6 +52,18 @@ class PendingCustomer(Base):
     card_number = Column(String(20), nullable=True)
     region = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PendingCustomerUpdate(Base):
+    __tablename__ = 'pending_customer_updates'
+
+    request_id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(String(20), ForeignKey('customers.customer_id', ondelete='CASCADE'), nullable=False)
+    updates_json = Column(Text, nullable=False)  # JSON-serialized fields and values dict
+    request_status = Column(String(20), default="Pending", nullable=False)  # Pending, Approved, Rejected
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationships
+    customer = relationship("Customer")
 
 class CustomerActivity(Base):
     __tablename__ = 'customer_activity'

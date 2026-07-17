@@ -6,7 +6,6 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import Orders from './pages/Orders';
-import Refunds from './pages/Refunds';
 import Employees from './pages/Employees';
 import Roles from './pages/Roles';
 import Settings from './pages/Settings';
@@ -83,16 +82,6 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Orders />
-              </MainLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/refunds"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <Refunds />
               </MainLayout>
             </ProtectedRoute>
           }

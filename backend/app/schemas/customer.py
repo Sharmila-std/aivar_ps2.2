@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, model_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -85,3 +85,33 @@ class PaginatedCustomers(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class CustomerProfileUpdateRequestCreate(BaseModel):
+    updates: dict
+
+class CustomerProfileUpdateRequestOut(BaseModel):
+    id: Optional[int] = None
+    request_id: int
+    customer_id: str
+    updates_json: str
+    updates: Optional[dict] = None
+    request_status: str
+    status: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def parse_fields(self) -> "CustomerProfileUpdateRequestOut":
+        import json
+        if self.updates_json:
+            try:
+                self.updates = json.loads(self.updates_json)
+            except Exception:
+                self.updates = {}
+        else:
+            self.updates = {}
+        self.id = self.request_id
+        self.status = self.request_status
+        return self

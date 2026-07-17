@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ShoppingBag, RefreshCw, UserCheck, Clock, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Users, ShoppingBag, UserCheck, Clock, AlertTriangle } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import api from '../api';
 
@@ -52,7 +52,7 @@ const Dashboard = () => {
     );
   }
 
-  const { kpis, recent_customers, recent_orders, recent_refunds } = data;
+  const { kpis, recent_customers, recent_orders } = data;
 
   return (
     <div className="flex-1 p-8 space-y-8 overflow-y-auto max-h-[calc(100vh-4rem)]">
@@ -80,7 +80,7 @@ const Dashboard = () => {
       )}
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <DashboardCard 
           title="Total Customers" 
           value={kpis.total_customers} 
@@ -94,13 +94,6 @@ const Dashboard = () => {
           icon={ShoppingBag} 
           colorClass="bg-emerald-500/10 text-emerald-400"
           borderClass="border-emerald-500/10"
-        />
-        <DashboardCard 
-          title="Pending Refunds" 
-          value={kpis.pending_refunds} 
-          icon={RefreshCw} 
-          colorClass="bg-amber-500/10 text-amber-400 animate-spin-slow"
-          borderClass="border-amber-500/10"
         />
         <DashboardCard 
           title="Total Employees" 
@@ -155,37 +148,35 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Recent Refund Requests */}
+        {/* Recent Registered Customers */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2">
-              <TrendingUp size={16} className="text-amber-400" />
-              Recent Refund Requests
-            </h3>
-          </div>
+          <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2 mb-4">
+            <Users size={16} className="text-indigo-400" />
+            Recent Registered Customers
+          </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                  <th className="pb-3">Refund ID</th>
-                  <th className="pb-3">Order ID</th>
-                  <th className="pb-3 text-right">Amount</th>
+                  <th className="pb-3">Customer ID</th>
+                  <th className="pb-3">Name</th>
+                  <th className="pb-3">Email</th>
                   <th className="pb-3 text-right">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40">
-                {recent_refunds.map((r) => (
-                  <tr key={r.refund_id} className="text-slate-300">
-                    <td className="py-3 font-semibold text-indigo-400">{r.refund_id}</td>
-                    <td className="py-3 text-slate-400">{r.order_id}</td>
-                    <td className="py-3 text-right font-semibold text-slate-200">${Number(r.refund_amount).toFixed(2)}</td>
+                {recent_customers.map((c) => (
+                  <tr key={c.customer_id} className="text-slate-300">
+                    <td className="py-3 font-semibold text-indigo-400">{c.customer_id}</td>
+                    <td className="py-3 font-medium text-slate-200 truncate max-w-[100px]">{c.full_name}</td>
+                    <td className="py-3 text-slate-400 truncate max-w-[120px]">{c.email}</td>
                     <td className="py-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        r.refund_status === 'Approved' ? 'bg-green-500/10 text-green-400' :
-                        r.refund_status === 'Rejected' ? 'bg-red-500/10 text-red-400' :
+                        c.status === 'Approved' ? 'bg-green-500/10 text-green-400' :
+                        c.status === 'Suspended' ? 'bg-rose-500/10 text-rose-400' :
                         'bg-amber-500/10 text-amber-400'
                       }`}>
-                        {r.refund_status}
+                        {c.status}
                       </span>
                     </td>
                   </tr>
@@ -193,46 +184,6 @@ const Dashboard = () => {
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
-
-      {/* Recent Registered Customers */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-        <h3 className="font-semibold text-slate-200 text-sm uppercase tracking-wider flex items-center gap-2 mb-4">
-          <Users size={16} className="text-indigo-400" />
-          Recent Registered Customers
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                <th className="pb-3">Customer ID</th>
-                <th className="pb-3">Name</th>
-                <th className="pb-3">Email</th>
-                <th className="pb-3">Joined Date</th>
-                <th className="pb-3 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/40">
-              {recent_customers.map((c) => (
-                <tr key={c.customer_id} className="text-slate-300">
-                  <td className="py-3 font-semibold text-indigo-400">{c.customer_id}</td>
-                  <td className="py-3 font-medium text-slate-200">{c.full_name}</td>
-                  <td className="py-3 text-slate-400">{c.email}</td>
-                  <td className="py-3 text-slate-400">{new Date(c.created_at).toLocaleDateString()}</td>
-                  <td className="py-3 text-right">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                      c.status === 'Approved' ? 'bg-green-500/10 text-green-400' :
-                      c.status === 'Suspended' ? 'bg-rose-500/10 text-rose-400' :
-                      'bg-amber-500/10 text-amber-400'
-                    }`}>
-                      {c.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

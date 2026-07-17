@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Tuple, Optional
-from ..models.customer import Customer, PendingCustomer, CustomerActivity
+from ..models.customer import Customer, PendingCustomer, CustomerActivity, PendingCustomerUpdate
 
 class CustomerRepository:
     def get_by_id(self, db: Session, customer_id: str) -> Optional[Customer]:
@@ -24,7 +24,7 @@ class CustomerRepository:
         query = db.query(Customer)
 
         if region:
-            query = query.filter(Customer.region == region)
+            query = query.filter(Customer.region.ilike(region))
 
         # Filtering
         if status and status.title() != "All":
@@ -102,3 +102,31 @@ class CustomerRepository:
 
     def get_activities_by_customer(self, db: Session, customer_id: str) -> List[CustomerActivity]:
         return db.query(CustomerActivity).filter(CustomerActivity.customer_id == customer_id).order_by(CustomerActivity.created_at.desc()).all()
+
+    # Pending Customer Update Requests
+    def get_pending_update_by_id(self, db: Session, request_id: int) -> Optional[PendingCustomerUpdate]:
+        return db.query(PendingCustomerUpdate).filter(PendingCustomerUpdate.request_id == request_id).first()
+
+    def get_pending_updates_all(self, db: Session, skip: int = 0, limit: int = 100, region: Optional[str] = None) -> List[PendingCustomerUpdate]:
+        query = db.query(PendingCustomerUpdate)
+        if region:
+            from ..models.customer import Customer
+            matching_customers = db.query(Customer).filter(Customer.region.ilike(region)).all()
+            cust_ids = [c.customer_id for c in matching_customers]
+            all_cased_ids = []
+            for cid in cust_ids:
+                all_cased_ids.extend([cid, cid.upper(), cid.lower()])
+            all_cased_ids = list(set(all_cased_ids))
+            query = query.filter(PendingCustomerUpdate.customer_id.in_(all_cased_ids))
+        return query.order_by(PendingCustomerUpdate.created_at.desc()).offset(skip).limit(limit).all()
+
+    def create_pending_update(self, db: Session, pending_update: PendingCustomerUpdate) -> PendingCustomerUpdate:
+        db.add(pending_update)
+        db.commit()
+        db.refresh(pending_update)
+        return pending_update
+
+    def update_pending_update(self, db: Session, pending_update: PendingCustomerUpdate) -> PendingCustomerUpdate:
+        db.commit()
+        db.refresh(pending_update)
+        return pending_update

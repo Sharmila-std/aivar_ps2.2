@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Tuple, Optional
-from ..models.order import Order, OrderItem, Refund
+from ..models.order import Order, OrderItem, PendingOrder
 
 class OrderRepository:
     # Order CRUD
@@ -22,10 +22,12 @@ class OrderRepository:
     ) -> Tuple[List[Order], int]:
         query = db.query(Order)
 
-        # If region is provided, join with Customer to filter
+        # If region is provided, query customers in that region first
         if region:
             from ..models.customer import Customer
-            query = query.join(Customer, Order.customer_id == Customer.customer_id).filter(Customer.region == region)
+            customers = db.query(Customer).filter(Customer.region.ilike(region)).all()
+            customer_ids = [c.customer_id for c in customers]
+            query = query.filter(Order.customer_id.in_(customer_ids))
 
         # Customer specific filter
         if customer_id:
@@ -83,74 +85,59 @@ class OrderRepository:
         db.refresh(item)
         return item
 
-    # Refund CRUD
-    def get_refund_by_id(self, db: Session, refund_id: str) -> Optional[Refund]:
-        return db.query(Refund).filter(Refund.refund_id == refund_id).first()
+    # Pending Order CRUD
+    def get_pending_by_id(self, db: Session, order_id: str) -> Optional[PendingOrder]:
+        return db.query(PendingOrder).filter(PendingOrder.order_id == order_id).first()
 
-    def get_refund_all(
+    def get_pending_all(
         self,
         db: Session,
         search: Optional[str] = None,
         status: Optional[str] = None,
-        sort_by: str = "created_at",
-        sort_desc: bool = True,
         skip: int = 0,
         limit: int = 100,
         customer_id: Optional[str] = None,
         region: Optional[str] = None
-    ) -> Tuple[List[Refund], int]:
-        query = db.query(Refund)
+    ) -> Tuple[List[PendingOrder], int]:
+        query = db.query(PendingOrder)
 
-        # If region is provided, join with Customer to filter
+        # Region filter
         if region:
             from ..models.customer import Customer
-            query = query.join(Customer, Refund.customer_id == Customer.customer_id).filter(Customer.region == region)
+            customers = db.query(Customer).filter(Customer.region.ilike(region)).all()
+            customer_ids = [c.customer_id for c in customers]
+            query = query.filter(PendingOrder.customer_id.in_(customer_ids))
 
         # Customer specific filter
         if customer_id:
-            query = query.filter(Refund.customer_id == customer_id)
+            query = query.filter(PendingOrder.customer_id == customer_id)
 
         # Filter
         if status and status != "All":
-            query = query.filter(Refund.refund_status == status)
+            query = query.filter(PendingOrder.order_status == status)
 
         # Search
         if search:
             search_pattern = f"%{search}%"
             query = query.filter(
                 or_(
-                    Refund.refund_id.ilike(search_pattern),
-                    Refund.order_id.ilike(search_pattern),
-                    Refund.customer_id.ilike(search_pattern),
-                    Refund.refund_reason.ilike(search_pattern)
+                    PendingOrder.order_id.ilike(search_pattern),
+                    PendingOrder.customer_id.ilike(search_pattern),
+                    PendingOrder.product_name.ilike(search_pattern),
+                    PendingOrder.category.ilike(search_pattern)
                 )
             )
 
-        # Count total
         total = query.count()
-
-        # Sort
-        sort_col = getattr(Refund, sort_by, Refund.created_at)
-        if sort_desc:
-            query = query.order_by(sort_col.desc())
-        else:
-            query = query.order_by(sort_col.asc())
-
-        # Paginate
-        results = query.offset(skip).limit(limit).all()
+        results = query.order_by(PendingOrder.order_date.desc()).offset(skip).limit(limit).all()
         return results, total
 
-    def create_refund(self, db: Session, refund: Refund) -> Refund:
-        db.add(refund)
+    def create_pending(self, db: Session, pending_order: PendingOrder) -> PendingOrder:
+        db.add(pending_order)
         db.commit()
-        db.refresh(refund)
-        return refund
+        db.refresh(pending_order)
+        return pending_order
 
-    def update_refund(self, db: Session, refund: Refund) -> Refund:
-        db.commit()
-        db.refresh(refund)
-        return refund
-
-    def delete_refund(self, db: Session, refund: Refund) -> None:
-        db.delete(refund)
+    def delete_pending(self, db: Session, pending_order: PendingOrder) -> None:
+        db.delete(pending_order)
         db.commit()
