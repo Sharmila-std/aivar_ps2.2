@@ -132,4 +132,13 @@ Base.metadata.create_all(bind=fallback_engine)
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "service": "crm-backend", "phase": 1}
+    from .config import settings
+    groq_key = settings.GROQ_API_KEY or ""
+    return {
+        "status": "healthy",
+        "service": "crm-backend",
+        "phase": 1,
+        "groq_key_configured": len(groq_key) > 0,
+        "groq_key_length": len(groq_key),
+        "groq_key_prefix": groq_key[:10] if len(groq_key) >= 10 else "None"
+    }
