@@ -312,7 +312,7 @@ class SecurityService:
                                 "Content-Type": "application/json"
                             },
                             json={
-                                "model": "llama-3.3-70b-8192" if "llama-3.3-70b" in settings.GROQ_API_KEY else "llama-3.3-70b-versatile",
+                                "model": "llama-3.3-70b-8192",
                                 "messages": [
                                     {"role": "system", "content": system_prompt},
                                     {"role": "user", "content": prompt}
