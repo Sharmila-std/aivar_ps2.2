@@ -1031,21 +1031,25 @@ Keep the analysis professional, concise, and structured. Return ONLY the markdow
         if settings.GROQ_API_KEY:
             try:
                 with httpx.Client(timeout=10.0) as client:
-                    res = client.post(
-                        "https://api.groq.com/openai/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "llama-3.3-70b-8192",
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_content}
-                            ],
-                            "temperature": 0.0
-                        }
-                    )
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "llama-3.3-70b-8192",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_content}
+                        ],
+                        "temperature": 0.0
+                    }
+                    res = client.post(url, headers=headers, json=payload)
+                    if res.status_code != 200:
+                        if res.status_code in (400, 404) and "model" in res.text:
+                            payload["model"] = "llama-3.3-70b-versatile"
+                            res = client.post(url, headers=headers, json=payload)
+                            
                     if res.status_code == 200:
                         return res.json()["choices"][0]["message"]["content"]
             except Exception as e:

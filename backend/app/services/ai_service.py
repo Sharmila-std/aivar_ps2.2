@@ -101,22 +101,26 @@ class AIService:
             try:
                 # Call Groq chat completions API
                 with httpx.Client(timeout=10.0) as client:
-                    res = client.post(
-                        "https://api.groq.com/openai/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "llama-3.3-70b-8192",
-                            "messages": [
-                                {"role": "system", "content": SYSTEM_PROMPT + role_context + entity_context},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "response_format": {"type": "json_object"},
-                            "temperature": 0.0
-                        }
-                    )
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "llama-3.3-70b-8192",
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT + role_context + entity_context},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.0
+                    }
+                    res = client.post(url, headers=headers, json=payload)
+                    if res.status_code != 200:
+                        if res.status_code in (400, 404) and "model" in res.text:
+                            payload["model"] = "llama-3.3-70b-versatile"
+                            res = client.post(url, headers=headers, json=payload)
+                            
                     if res.status_code == 200:
                         content = res.json()["choices"][0]["message"]["content"]
                         parsed = json.loads(content)
@@ -214,7 +218,7 @@ class AIService:
         match_generic_read = re.search(r'\b(show|read|get|details)\b', plow)
         if match_generic_read:
             # Check if user is asking for their own info
-            is_own_query = "my" in plow or "me" in plow or "self" in plow
+            is_own_query = ("my" in plow or "self" in plow or plow.endswith(" me") or plow == "me") and not re.search(r'(cus\d+|emp\d+|ord\d+)', plow)
             if is_own_query:
                 if role_name == "Customer":
                     return {"tool": "crm.customer", "operation": "read", "parameters": {"customer_id": user_id or "CUSXXXXXX"}}
@@ -709,21 +713,25 @@ class AIService:
 
         try:
             with httpx.Client(timeout=10.0) as client:
-                res = client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "llama-3.3-70b-8192",
-                        "messages": [
-                            {"role": "system", "content": system_msg},
-                            {"role": "user", "content": user_msg}
-                        ],
-                        "temperature": 0.5
-                    }
-                )
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "llama-3.3-70b-8192",
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg}
+                    ],
+                    "temperature": 0.5
+                }
+                res = client.post(url, headers=headers, json=payload)
+                if res.status_code != 200:
+                    if res.status_code in (400, 404) and "model" in res.text:
+                        payload["model"] = "llama-3.3-70b-versatile"
+                        res = client.post(url, headers=headers, json=payload)
+                        
                 if res.status_code == 200:
                     content = res.json()["choices"][0]["message"]["content"]
                     return content.strip()
