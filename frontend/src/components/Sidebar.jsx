@@ -185,7 +185,7 @@ const Sidebar = () => {
             DB
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-slate-300 truncate">Supabase Postgres</p>
+            <p className="text-xs font-medium text-slate-300 truncate">MongoDB Atlas</p>
             <p className="text-[10px] text-green-500 font-semibold flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block animate-pulse"></span>
               Connected
