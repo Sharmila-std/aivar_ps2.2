@@ -15,5 +15,7 @@ class Settings:
     SMTP_USER: str = os.getenv("SMTP_USER", "sarmiladevig45@gmail.com").strip()
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "").strip()
     SMTP_FROM: str = os.getenv("SMTP_FROM", "sarmiladevig45@gmail.com").strip()
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "").strip()
+    SENDGRID_FROM_EMAIL: str = os.getenv("SENDGRID_FROM_EMAIL", "sarmiladevig45@gmail.com").strip()
 
 settings = Settings()
