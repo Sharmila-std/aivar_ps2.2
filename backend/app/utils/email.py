@@ -28,10 +28,14 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         msg['Date'] = email.utils.formatdate(localtime=True)
         msg['Message-ID'] = email.utils.make_msgid(domain=settings.SMTP_FROM.split('@')[-1])
 
-        # Connect to SMTP
-        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5.0)
-        server.ehlo()
-        server.starttls()
+        # Connect to SMTP dynamically based on port
+        if settings.SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5.0)
+        else:
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5.0)
+            server.ehlo()
+            server.starttls()
+            
         server.ehlo()
         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         server.sendmail(settings.SMTP_FROM, to_email, msg.as_string())

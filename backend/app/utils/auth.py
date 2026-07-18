@@ -83,3 +83,9 @@ def get_current_active_admin(
             detail="Operation not permitted. Admin privileges required."
         )
     return current_employee
+
+def decode_access_token(token: str) -> Optional[dict]:
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except Exception:
+        return None
