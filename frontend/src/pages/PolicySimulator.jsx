@@ -19,7 +19,11 @@ const CUSTOMER_OPTIONS = [
   "View Employees",
   "Access Security Dashboard",
   "Access AI Workspace",
-  "Export Data"
+  "Export Data",
+  "Read Admin Data",
+  "Read Managers Data",
+  "Update Their Own Account",
+  "Delete Their Own Account"
 ];
 
 const MANAGER_OPTIONS = [
@@ -35,7 +39,9 @@ const MANAGER_OPTIONS = [
   "Unlock Accounts",
   "Export Audit Logs",
   "View Cross Region Customers",
-  "Delete Cross Region Customers"
+  "Delete Cross Region Customers",
+  "Update Customer Records",
+  "View Admin Details"
 ];
 
 const ALLOW_RULES = [

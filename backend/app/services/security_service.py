@@ -1509,7 +1509,25 @@ class SecurityService:
                         elif norm_op in ("update_request",):
                             perm_allowed = "Update Profile Request" in cust_perms
                             triggered_rule = "Update Profile Request Permission"
-                        elif norm_op in ("create", "update", "delete"):
+                        elif norm_op == "update":
+                            tgt_cust = params.get("customer_id") or log_obj.user_id
+                            is_own = (str(tgt_cust).upper() == str(log_obj.user_id).upper())
+                            if is_own:
+                                perm_allowed = "Update Their Own Account" in cust_perms
+                                triggered_rule = "Update Own Account Permission"
+                            else:
+                                perm_allowed = "Update Customer Records" in cust_perms
+                                triggered_rule = "Update Customer Records Permission"
+                        elif norm_op == "delete":
+                            tgt_cust = params.get("customer_id") or log_obj.user_id
+                            is_own = (str(tgt_cust).upper() == str(log_obj.user_id).upper())
+                            if is_own:
+                                perm_allowed = "Delete Their Own Account" in cust_perms
+                                triggered_rule = "Delete Own Account Permission"
+                            else:
+                                perm_allowed = "Update Customer Records" in cust_perms
+                                triggered_rule = "Update Customer Records Permission"
+                        elif norm_op == "create":
                             perm_allowed = "Update Customer Records" in cust_perms
                             triggered_rule = "Update Customer Records Permission"
                         else:
@@ -1531,8 +1549,33 @@ class SecurityService:
                             triggered_rule = "Default Order Boundary"
 
                     elif norm_tool in ("crm.employee", "crm.dashboard"):
-                        perm_allowed = False
-                        triggered_rule = "Admin Modules Access Restriction"
+                        tgt_emp_id = params.get("employee_id") or log_obj.resource_id or ""
+                        if tgt_emp_id.upper() in ("ALL", "", "NONE"):
+                            tgt_emp_id = ""
+                            
+                        target_emp = None
+                        if tgt_emp_id:
+                            target_emp = db.query(Employee).filter(Employee.employee_id == tgt_emp_id).first()
+                        
+                        if target_emp:
+                            emp_role = (target_emp.role or "").lower()
+                            if emp_role == "admin":
+                                perm_allowed = "Read Admin Data" in cust_perms
+                                triggered_rule = "Read Admin Data Permission"
+                            elif emp_role == "manager":
+                                perm_allowed = "Read Managers Data" in cust_perms
+                                triggered_rule = "Read Managers Data Permission"
+                            else:
+                                perm_allowed = False
+                                triggered_rule = "Admin Modules Access Restriction"
+                        else:
+                            # Listing all employees requires both permissions
+                            if "Read Admin Data" in cust_perms and "Read Managers Data" in cust_perms:
+                                perm_allowed = True
+                                triggered_rule = "Read All Employees Permission"
+                            else:
+                                perm_allowed = False
+                                triggered_rule = "Admin Modules Access Restriction"
                     else:
                         perm_allowed = False
                         triggered_rule = "Default Customer Boundary"
@@ -1557,6 +1600,9 @@ class SecurityService:
                         elif norm_op == "approve":
                             perm_allowed = "Approve Customer Updates" in mgr_perms
                             triggered_rule = "Approve Customer Updates Permission"
+                        elif norm_op in ("update", "update_request"):
+                            perm_allowed = "Update Customer Records" in mgr_perms
+                            triggered_rule = "Update Customer Records Permission"
                         else:
                             perm_allowed = False
                             triggered_rule = "Default Manager Boundary"
@@ -1577,7 +1623,16 @@ class SecurityService:
                             perm_allowed = False
                             triggered_rule = "Employee Modify Restriction"
                         else:
-                            perm_allowed = True
+                            tgt_emp_id = params.get("employee_id") or log_obj.resource_id or ""
+                            target_emp = None
+                            if tgt_emp_id:
+                                target_emp = db.query(Employee).filter(Employee.employee_id == tgt_emp_id).first()
+                            
+                            if target_emp and (target_emp.role or "").lower() == "admin":
+                                perm_allowed = "View Admin Details" in mgr_perms
+                                triggered_rule = "View Admin Details Permission"
+                            else:
+                                perm_allowed = True
                     else:
                         perm_allowed = False
                         triggered_rule = "Default Manager Boundary"
