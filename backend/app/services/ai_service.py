@@ -728,15 +728,18 @@ class AIService:
                 }
                 res = client.post(url, headers=headers, json=payload)
                 if res.status_code != 200:
+                    print(f"[generate_human_explanation] Groq try 1 error {res.status_code}: {res.text}")
                     if res.status_code in (400, 404) and "model" in res.text:
                         payload["model"] = "llama-3.3-70b-versatile"
                         res = client.post(url, headers=headers, json=payload)
+                        if res.status_code != 200:
+                            print(f"[generate_human_explanation] Groq try 2 error {res.status_code}: {res.text}")
                         
                 if res.status_code == 200:
                     content = res.json()["choices"][0]["message"]["content"]
                     return content.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[generate_human_explanation] Exception: {e}")
 
         # Fallback explanation
         if result.get("success") == False:
